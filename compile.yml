@@ -1,0 +1,10 @@
+version: '2'
+services:
+  auth_compile:
+    image: "golang:1.7-alpine"
+    environment:
+      GOBIN: /go/src/github.com/mklimuk/auth/dist
+      HUSAR_VERSION: acceptance
+    volumes:
+      - .:/go/src/github.com/mklimuk/auth
+    command: sh -c "go install -v github.com/mklimuk/auth"

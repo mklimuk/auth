@@ -1,0 +1,27 @@
+version: '2'
+services:
+  auth_run:
+    image: "docker.agilesoftware.ninja/mklimuk/auth:${HUSAR_VERSION}"
+    build:
+      context: .
+      args:
+        HUSAR_VERSION: ${HUSAR_VERSION}
+    environment:
+      - LOG=debug
+      - ENV=dev
+      - GIN_MODE=debug
+    volumes:
+      - "./acceptance/config:/etc/husar"
+    container_name: auth
+    ports:
+      - "11091:8080"
+    networks:
+      acceptance:
+networks:
+  acceptance:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+      - subnet: 172.27.238.0/24
+        gateway: 172.27.238.1
