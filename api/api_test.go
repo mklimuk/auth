@@ -89,6 +89,7 @@ func (suite *APITestSuite) TestCheckToken() {
 	res, err := http.Post(fmt.Sprintf("%s%s", suite.serv.URL, "/token/check"), "application/x.token.check+json", nil)
 	a.NoError(err)
 	a.Equal(http.StatusBadRequest, res.StatusCode)
+	c := &user.Claims{Username: "mklimuk"}
 	req := &checkRequest{
 		Token:  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE0ODUzNDUzOTEsInVzZXJuYW1lIjoibWljaGFsIiwibmFtZSI6Ik1pY2hhbCBLbGltdWsiLCJwZXJtaXNzaW9ucyI6N30.a-Uh1Z_5m7Jy3GBJbjAZfYqC9uYaIFhM4HKnNb5fwZ4",
 		Update: true,
@@ -97,12 +98,12 @@ func (suite *APITestSuite) TestCheckToken() {
 	b, err = json.Marshal(&req)
 	a.NoError(err)
 	// test unauthorized
-	suite.usr.On("CheckToken", req.Token, req.Update).Return(req.Token, goerr.NewError("unauthorized", goerr.Unauthorized)).Once()
+	suite.usr.On("CheckToken", req.Token, req.Update).Return(req.Token, c, goerr.NewError("unauthorized", goerr.Unauthorized)).Once()
 	res, err = http.Post(fmt.Sprintf("%s%s", suite.serv.URL, "/token/check"), "application/x.token.check+json", bytes.NewReader(b))
 	a.NoError(err)
 	a.Equal(http.StatusUnauthorized, res.StatusCode)
 	// test internal error
-	suite.usr.On("CheckToken", req.Token, req.Update).Return(req.Token, errors.New("dummy")).Once()
+	suite.usr.On("CheckToken", req.Token, req.Update).Return(req.Token, c, errors.New("dummy")).Once()
 	res, err = http.Post(fmt.Sprintf("%s%s", suite.serv.URL, "/token/check"), "application/x.token.check+json", bytes.NewReader(b))
 	a.NoError(err)
 	a.Equal(http.StatusUnauthorized, res.StatusCode)
@@ -110,7 +111,7 @@ func (suite *APITestSuite) TestCheckToken() {
 	var token string
 	token, err = user.BuildToken("mklimuk", "Michal", 3)
 	a.NoError(err)
-	suite.usr.On("CheckToken", req.Token, req.Update).Return(token, nil).Once()
+	suite.usr.On("CheckToken", req.Token, req.Update).Return(token, c, nil).Once()
 	res, err = http.Post(fmt.Sprintf("%s%s", suite.serv.URL, "/token/check"), "application/x.token.check+json", bytes.NewReader(b))
 	a.NoError(err)
 	a.Equal(http.StatusOK, res.StatusCode)

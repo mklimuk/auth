@@ -11,7 +11,8 @@ import (
 
 var secret = []byte("Sample123")
 
-type claims struct {
+//Claims contains specific claims used in the auth system
+type Claims struct {
 	jwt.StandardClaims
 	Username    string `json:"username"`
 	Name        string `json:"name"`
@@ -22,7 +23,7 @@ type claims struct {
 type Manager interface {
 	Login(username, password string) (string, error)
 	Create(u *User) (*User, error)
-	CheckToken(token string, update bool) (string, error)
+	CheckToken(token string, update bool) (string, *Claims, error)
 }
 
 type man struct {
@@ -47,19 +48,19 @@ func (m *man) Login(username, password string) (token string, err error) {
 	return token, goerr.NewError("User not found", goerr.NotFound)
 }
 
-func (m *man) CheckToken(token string, update bool) (string, error) {
-	var c *claims
+func (m *man) CheckToken(token string, update bool) (string, *Claims, error) {
+	var c *Claims
 	var err error
 	if c, err = parseToken(token); err != nil {
-		return token, err
+		return token, c, err
 	}
 	if update {
 		var updated string
 		if updated, err = BuildToken(c.Username, c.Name, c.Permissions); err == nil {
-			return updated, err
+			return updated, c, err
 		}
 	}
-	return token, err
+	return token, c, err
 }
 
 func (m *man) Create(u *User) (*User, error) {
@@ -74,10 +75,10 @@ func (m *man) Create(u *User) (*User, error) {
 	return u, nil
 }
 
-func parseToken(tokenString string) (res *claims, err error) {
+func parseToken(tokenString string) (res *Claims, err error) {
 	var ok bool
 	var token *jwt.Token
-	res = new(claims)
+	res = new(Claims)
 	if token, err = jwt.ParseWithClaims(tokenString, res, func(token *jwt.Token) (interface{}, error) {
 		if _, ok = token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, goerr.NewError(fmt.Sprintf("Unexpected signing method: %v", token.Header["alg"]), goerr.BadRequest)
@@ -87,7 +88,7 @@ func parseToken(tokenString string) (res *claims, err error) {
 		return res, err
 	}
 
-	if res, ok = token.Claims.(*claims); !ok {
+	if res, ok = token.Claims.(*Claims); !ok {
 		err = goerr.NewError("Could not parse token", goerr.BadRequest)
 	}
 	return res, err
@@ -97,7 +98,7 @@ func parseToken(tokenString string) (res *claims, err error) {
 //BuildToken builds a JWT token with custom claims
 func BuildToken(username, fullName string, rights int) (string, error) {
 	ttl := time.Now().Add(time.Duration(30) * time.Minute)
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims{
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, Claims{
 		Username:    username,
 		Name:        fullName,
 		Permissions: rights,

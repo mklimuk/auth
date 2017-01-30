@@ -102,7 +102,8 @@ func (c *userAPI) checkToken(ctx *gin.Context) {
 		return
 	}
 	var token string
-	if token, err = c.usr.CheckToken(req.Token, req.Update); err != nil {
+	var cs *user.Claims
+	if token, cs, err = c.usr.CheckToken(req.Token, req.Update); err != nil {
 		switch goerr.GetType(err) {
 		case goerr.BadRequest:
 			ctx.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request", "details": err.Error()})
@@ -112,5 +113,5 @@ func (c *userAPI) checkToken(ctx *gin.Context) {
 			return
 		}
 	}
-	ctx.JSON(http.StatusOK, gin.H{"token": token})
+	ctx.JSON(http.StatusOK, gin.H{"token": token, "claims": cs})
 }
