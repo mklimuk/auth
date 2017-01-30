@@ -21,3 +21,9 @@ func (m *ManagerMock) Create(u *User) (*User, error) {
 	}
 	return args.Get(0).(*User), args.Error(1)
 }
+
+//CheckToken is a mocked method
+func (m *ManagerMock) CheckToken(token string, update bool) (string, error) {
+	args := m.Called(token, update)
+	return args.String(0), args.Error(1)
+}

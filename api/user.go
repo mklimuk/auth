@@ -15,6 +15,11 @@ type userAPI struct {
 	usr user.Manager
 }
 
+type checkRequest struct {
+	Token  string `json:"token"`
+	Update bool   `json:"update"`
+}
+
 //NewUserAPI is the user API constructor
 func NewUserAPI(usr user.Manager) rest.API {
 	c := userAPI{usr}
@@ -25,6 +30,7 @@ func NewUserAPI(usr user.Manager) rest.API {
 func (c *userAPI) AddRoutes(router *gin.Engine) {
 	router.POST("/login", c.login)
 	router.POST("/user", c.createUser)
+	router.POST("/token/check", c.checkToken)
 }
 
 func (c *userAPI) login(ctx *gin.Context) {
@@ -83,4 +89,28 @@ func (c *userAPI) createUser(ctx *gin.Context) {
 		}
 	}
 	ctx.YAML(http.StatusOK, u)
+}
+
+func (c *userAPI) checkToken(ctx *gin.Context) {
+	defer rest.ErrorHandler(ctx)
+	var err error
+	req := new(checkRequest)
+	if err = ctx.BindJSON(req); err != nil {
+		log.WithFields(log.Fields{"logger": "auth.api", "method": "checkToken", "error": err}).
+			Warn("Could not parse request")
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "Could not parse input", "details": err.Error()})
+		return
+	}
+	var token string
+	if token, err = c.usr.CheckToken(req.Token, req.Update); err != nil {
+		switch goerr.GetType(err) {
+		case goerr.BadRequest:
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request", "details": err.Error()})
+			return
+		default:
+			ctx.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token", "details": err.Error()})
+			return
+		}
+	}
+	ctx.JSON(http.StatusOK, gin.H{"token": token})
 }

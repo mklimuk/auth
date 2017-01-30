@@ -42,6 +42,19 @@ func (suite *ManagerTestSuite) TestLogin() {
 	a.NotEmpty(token)
 }
 
+func (suite *ManagerTestSuite) TestDecodeToken() {
+	token := "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE0ODUzNDUzOTEsInVzZXJuYW1lIjoibWljaGFsIiwibmFtZSI6Ik1pY2hhbCBLbGltdWsiLCJwZXJtaXNzaW9ucyI6N30.a-Uh1Z_5m7Jy3GBJbjAZfYqC9uYaIFhM4HKnNb5fwZ4"
+	c, err := parseToken(token)
+	a := assert.New(suite.T())
+	a.Error(err)
+	a.Equal("michal", c.Username)
+	token, err = BuildToken("mklimuk", "Michal", 7)
+	a.NoError(err)
+	c, err = parseToken(token)
+	a.NoError(err)
+	a.Equal("mklimuk", c.Username)
+}
+
 func TestManagerTestSuite(t *testing.T) {
 	suite.Run(t, new(ManagerTestSuite))
 }
