@@ -29,6 +29,7 @@ func NewUserAPI(usr user.Manager) rest.API {
 //Routes initializes and returns all catalog API routes
 func (c *userAPI) AddRoutes(router *gin.Engine) {
 	router.POST("/login", c.login)
+	router.POST("/logout", c.logout)
 	router.POST("/user", c.createUser)
 	router.POST("/token/check", c.checkToken)
 }
@@ -60,6 +61,11 @@ func (c *userAPI) login(ctx *gin.Context) {
 		}
 	}
 	ctx.JSON(http.StatusOK, gin.H{"token": token})
+}
+
+func (c *userAPI) logout(ctx *gin.Context) {
+	defer rest.ErrorHandler(ctx)
+	ctx.AbortWithStatus(http.StatusOK)
 }
 
 func (c *userAPI) createUser(ctx *gin.Context) {
