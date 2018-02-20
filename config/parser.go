@@ -3,7 +3,7 @@ package config
 import (
 	"io/ioutil"
 
-	log "github.com/Sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
 	"github.com/mklimuk/husar/util"
 	yaml "gopkg.in/yaml.v2"
 )

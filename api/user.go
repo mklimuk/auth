@@ -7,7 +7,7 @@ import (
 	"github.com/mklimuk/goerr"
 	"github.com/mklimuk/husar/rest"
 
-	log "github.com/Sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
 	"github.com/gin-gonic/gin"
 )
 
