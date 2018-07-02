@@ -9,11 +9,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	log "github.com/sirupsen/logrus"
-	"github.com/gin-gonic/gin"
-	"github.com/mklimuk/auth/config"
+	"github.com/go-chi/chi"
 	"github.com/mklimuk/auth/user"
-	"github.com/mklimuk/goerr"
+	log "github.com/sirupsen/logrus"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
@@ -21,19 +19,16 @@ import (
 
 type APITestSuite struct {
 	suite.Suite
-	router *gin.Engine
-	usr    user.ManagerMock
+	router chi.Router
+	usr    *user.ManagerMock
 	serv   *httptest.Server
 }
 
 func (suite *APITestSuite) SetupSuite() {
 	log.SetLevel(log.DebugLevel)
-	suite.usr = user.ManagerMock{}
-	u := NewUserAPI(&suite.usr)
-	c := NewControlAPI()
-	suite.router = gin.New()
-	u.AddRoutes(suite.router)
-	c.AddRoutes(suite.router)
+	suite.usr = &user.ManagerMock{}
+	suite.router = chi.NewRouter()
+	suite.router.Route("/", UserAPI(suite.usr))
 	suite.serv = httptest.NewServer(suite.router)
 }
 
@@ -41,22 +36,7 @@ func (suite *APITestSuite) TearDownSuite() {
 	suite.serv.Close()
 }
 
-func (suite *APITestSuite) TestHealth() {
-	a := assert.New(suite.T())
-	res, err := http.Get(fmt.Sprintf("%s%s", suite.serv.URL, "/health"))
-	a.NoError(err)
-	a.Equal(http.StatusOK, res.StatusCode)
-}
-
-func (suite *APITestSuite) TestVersion() {
-	a := assert.New(suite.T())
-	config.Ver = config.Version{Version: "0.1.0"}
-	res, err := http.Get(fmt.Sprintf("%s%s", suite.serv.URL, "/version"))
-	a.NoError(err)
-	a.Equal(http.StatusOK, res.StatusCode)
-}
-
-func (suite *APITestSuite) TestCreateTemplate() {
+func (suite *APITestSuite) TestLogin() {
 	a := assert.New(suite.T())
 	// test no body (parse error)
 	res, err := http.Post(fmt.Sprintf("%s%s", suite.serv.URL, "/login"), "application/x.login.req+json", nil)
@@ -67,7 +47,7 @@ func (suite *APITestSuite) TestCreateTemplate() {
 	b, err = json.Marshal(&req)
 	a.NoError(err)
 	// test unauthorized
-	suite.usr.On("Login", "test1", "pass").Return("", goerr.NewError("unauthorized", goerr.Unauthorized)).Once()
+	suite.usr.On("Login", "test1", "pass").Return("", fmt.Errorf("unauthorized")).Once()
 	res, err = http.Post(fmt.Sprintf("%s%s", suite.serv.URL, "/login"), "application/x.login.req+json", bytes.NewReader(b))
 	a.NoError(err)
 	a.Equal(http.StatusUnauthorized, res.StatusCode)
@@ -98,7 +78,7 @@ func (suite *APITestSuite) TestCheckToken() {
 	b, err = json.Marshal(&req)
 	a.NoError(err)
 	// test unauthorized
-	suite.usr.On("CheckToken", req.Token, req.Update).Return(req.Token, c, goerr.NewError("unauthorized", goerr.Unauthorized)).Once()
+	suite.usr.On("CheckToken", req.Token, req.Update).Return(req.Token, c, fmt.Errorf("unauthorized")).Once()
 	res, err = http.Post(fmt.Sprintf("%s%s", suite.serv.URL, "/token/check"), "application/x.token.check+json", bytes.NewReader(b))
 	a.NoError(err)
 	a.Equal(http.StatusUnauthorized, res.StatusCode)

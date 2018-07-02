@@ -1,123 +1,130 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 
+	"github.com/go-chi/chi"
+	"github.com/go-chi/render"
 	"github.com/mklimuk/auth/user"
-	"github.com/mklimuk/goerr"
-	"github.com/mklimuk/husar/rest"
-
 	log "github.com/sirupsen/logrus"
-	"github.com/gin-gonic/gin"
 )
-
-type userAPI struct {
-	usr user.Manager
-}
 
 type checkRequest struct {
 	Token  string `json:"token"`
 	Update bool   `json:"update"`
 }
 
-//NewUserAPI is the user API constructor
-func NewUserAPI(usr user.Manager) rest.API {
-	c := userAPI{usr}
-	return rest.API(&c)
-}
-
-//Routes initializes and returns all catalog API routes
-func (c *userAPI) AddRoutes(router *gin.Engine) {
-	router.POST("/login", c.login)
-	router.POST("/logout", c.logout)
-	router.POST("/user", c.createUser)
-	router.POST("/token/check", c.checkToken)
-}
-
-func (c *userAPI) login(ctx *gin.Context) {
-	defer rest.ErrorHandler(ctx)
-	var err error
-	l := new(user.User)
-	if err = ctx.BindJSON(l); err != nil {
-		log.WithFields(log.Fields{"logger": "auth.api", "method": "login", "error": err}).
-			Warn("Could not parse request")
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "Could not parse input", "details": err.Error()})
-		return
+func UserAPI(usr user.Manager) func(router chi.Router) {
+	return func(router chi.Router) {
+		router.Post("/login", loginHandler(usr))
+		router.Post("/logout", logoutHandler(usr))
+		router.Post("/user", createUserHandler(usr))
+		router.Put("/token/check", checkTokenHandler(usr))
 	}
-	var token string
-	if token, err = c.usr.Login(l.Username, l.Password); err != nil {
-		switch goerr.GetType(err) {
-		case goerr.NotFound:
-			ctx.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
-			return
-		case goerr.Unauthorized:
-			ctx.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid password"})
-			return
-		default:
-			log.WithFields(log.Fields{"logger": "auth.api", "method": "login", "error": err}).
-				WithError(err).Error("Error processing login request")
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Internal error occured", "details": err.Error()})
+}
+
+func loginHandler(users user.Manager) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		usr := new(user.User)
+		defer r.Body.Close()
+		err := render.DecodeJSON(r.Body, usr)
+		if err != nil {
+			renderErrorJSON(w, r, http.StatusBadRequest, err.Error())
 			return
 		}
-	}
-	ctx.JSON(http.StatusOK, gin.H{"token": token})
-}
-
-func (c *userAPI) logout(ctx *gin.Context) {
-	defer rest.ErrorHandler(ctx)
-	ctx.AbortWithStatus(http.StatusOK)
-}
-
-func (c *userAPI) createUser(ctx *gin.Context) {
-	defer rest.ErrorHandler(ctx)
-	var err error
-	u := new(user.User)
-	if err = ctx.BindJSON(u); err != nil {
-		log.WithFields(log.Fields{"logger": "auth.api", "method": "createUser", "error": err}).
-			Warn("Could not parse request")
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "Could not parse input", "details": err.Error()})
-		return
-	}
-	if u, err = c.usr.Create(u); err != nil {
-		switch goerr.GetType(err) {
-		case goerr.NotFound:
-			ctx.JSON(http.StatusNotFound, goerr.GetCtx(err))
-			return
-		case goerr.BadRequest:
-			ctx.JSON(http.StatusBadRequest, goerr.GetCtx(err))
-			return
-		case goerr.Unauthorized:
-			ctx.JSON(http.StatusUnauthorized, goerr.GetCtx(err))
-			return
-		default:
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Internal error occured", "details": err.Error()})
+		token, err := users.Login(usr.Username, usr.Password)
+		if err != nil {
+			if err == user.ErrNotFound {
+				renderErrorJSON(w, r, http.StatusNotFound, fmt.Sprintf("user %s not found", usr.Username))
+				return
+			}
+			if err == user.ErrBadRequest {
+				renderErrorJSON(w, r, http.StatusBadRequest, "bad request")
+				return
+			}
+			if err == user.ErrWrongUserPass {
+				renderErrorJSON(w, r, http.StatusUnauthorized, "wrong username or password")
+				return
+			}
+			log.Errorf("unexpected error during signin process for user %s: %s", usr.Username, err.Error())
+			renderErrorJSON(w, r, http.StatusInternalServerError, "wystąpił nieoczekiwany błąd podczas logowania")
 			return
 		}
+		render.Status(r, http.StatusOK)
+		render.JSON(w, r, struct {
+			Token string `json:"token"`
+		}{token})
 	}
-	ctx.YAML(http.StatusOK, u)
 }
 
-func (c *userAPI) checkToken(ctx *gin.Context) {
-	defer rest.ErrorHandler(ctx)
-	var err error
-	req := new(checkRequest)
-	if err = ctx.BindJSON(req); err != nil {
-		log.WithFields(log.Fields{"logger": "auth.api", "method": "checkToken", "error": err}).
-			Warn("Could not parse request")
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "Could not parse input", "details": err.Error()})
-		return
+func logoutHandler(users user.Manager) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
 	}
-	var token string
-	var cs *user.Claims
-	if token, cs, err = c.usr.CheckToken(req.Token, req.Update); err != nil {
-		switch goerr.GetType(err) {
-		case goerr.BadRequest:
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request", "details": err.Error()})
-			return
-		default:
-			ctx.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token", "details": err.Error()})
+}
+
+func createUserHandler(users user.Manager) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		usr := new(user.User)
+		defer r.Body.Close()
+		err := render.DecodeJSON(r.Body, usr)
+		if err != nil {
+			renderErrorJSON(w, r, http.StatusBadRequest, err.Error())
 			return
 		}
+		usr, err = users.Create(usr)
+		if err != nil {
+			if err == user.ErrBadRequest {
+				renderErrorJSON(w, r, http.StatusBadRequest, "bad request")
+				return
+			}
+			if err == user.ErrExists {
+				renderErrorJSON(w, r, http.StatusConflict, "user already exists")
+				return
+			}
+			log.Errorf("unexpected error during user creation: %s", err.Error())
+			renderErrorJSON(w, r, http.StatusInternalServerError, "wystąpił nieoczekiwany błąd tworzenia konta")
+			return
+		}
+		render.Status(r, http.StatusOK)
+		render.JSON(w, r, usr)
 	}
-	ctx.JSON(http.StatusOK, gin.H{"token": token, "claims": cs})
+}
+
+func checkTokenHandler(users user.Manager) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		req := new(checkRequest)
+		defer r.Body.Close()
+		err := render.DecodeJSON(r.Body, req)
+		if err != nil {
+			renderErrorJSON(w, r, http.StatusBadRequest, err.Error())
+			return
+		}
+		token, cs, err := users.CheckToken(req.Token, req.Update)
+		if err != nil {
+			if err == user.ErrBadRequest {
+				renderErrorJSON(w, r, http.StatusBadRequest, "bad request")
+				return
+			}
+			log.Errorf("unexpected error during token check: %s", err.Error())
+			renderErrorJSON(w, r, http.StatusInternalServerError, "wystąpił nieoczekiwany błąd tworzenia konta")
+			return
+		}
+		render.Status(r, http.StatusOK)
+		render.JSON(w, r, struct {
+			Token  string       `json:"token"`
+			Claims *user.Claims `json:"claims"`
+		}{
+			Token:  token,
+			Claims: cs,
+		})
+	}
+}
+
+func renderErrorJSON(w http.ResponseWriter, r *http.Request, status int, err string) {
+	render.Status(r, status)
+	render.JSON(w, r, struct {
+		Error string `json:"error"`
+	}{err})
 }
