@@ -26,6 +26,9 @@ func (suite *StoreTestSuite) TestCreate() {
 		Password: "pass",
 	}
 	s.store.Save(u)
+	u, err = s.store.ByUsername("user")
+	suite.NoError(err)
+	suite.Equal("abcdef", u.ID)
 
 }
 

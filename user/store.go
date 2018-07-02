@@ -57,7 +57,7 @@ func (s *BoltStore) Get(ID string) (*User, error) {
 
 func (s *BoltStore) ByUsername(username string) (*User, error) {
 	res := new(User)
-	err := s.db.One("Username", username, &res)
+	err := s.db.One("Username", username, res)
 	if err == storm.ErrNotFound {
 		return nil, nil
 	}
