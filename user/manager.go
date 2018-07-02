@@ -2,14 +2,33 @@ package user
 
 import (
 	"fmt"
+	"math/rand"
 	"time"
 
 	jwt "github.com/dgrijalva/jwt-go"
-	"github.com/mklimuk/goerr"
+	"github.com/oklog/ulid"
+	log "github.com/sirupsen/logrus"
+	"github.com/spf13/afero"
 	"golang.org/x/crypto/bcrypt"
+	yaml "gopkg.in/yaml.v2"
 )
 
 var secret = []byte("Sample123")
+
+var entropy *rand.Rand
+
+func init() {
+	t := time.Unix(1000000, 0)
+	entropy = rand.New(rand.NewSource(t.UnixNano()))
+}
+
+var (
+	ErrUnauthorized  = fmt.Errorf("unauthorized")
+	ErrNotFound      = fmt.Errorf("user not found")
+	ErrExists        = fmt.Errorf("user exists")
+	ErrBadRequest    = fmt.Errorf("bad request")
+	ErrWrongUserPass = fmt.Errorf("wrong username or password")
+)
 
 //Claims contains specific claims used in the auth system
 type Claims struct {
@@ -26,29 +45,31 @@ type Manager interface {
 	CheckToken(token string, update bool) (string, *Claims, error)
 }
 
-type man struct {
-	users []*User
+type DefaultManager struct {
+	store Store
 }
 
-//NewManager is a user manager constructor
-func NewManager(users []*User) Manager {
-	m := man{users}
-	return Manager(&m)
+//NewDefaultManager returns a default user manager
+func NewDefaultManager(store Store) *DefaultManager {
+	m := &DefaultManager{store: store}
+	return m
 }
 
-func (m *man) Login(username, password string) (token string, err error) {
-	for _, u := range m.users {
-		if u.Username == username {
-			if err = bcrypt.CompareHashAndPassword([]byte(u.Password), []byte(password)); err != nil {
-				return token, goerr.NewError("Invalid password", goerr.Unauthorized)
-			}
-			return BuildToken(username, u.Name, u.Rigths)
-		}
+func (m *DefaultManager) Login(username, password string) (token string, err error) {
+	u, err := m.store.ByUsername(username)
+	if err != nil {
+		return "", err
 	}
-	return token, goerr.NewError("User not found", goerr.NotFound)
+	if u == nil {
+		return "", ErrNotFound
+	}
+	if err = bcrypt.CompareHashAndPassword([]byte(u.Password), []byte(password)); err != nil {
+		return token, ErrWrongUserPass
+	}
+	return BuildToken(username, u.Name, u.Rigths)
 }
 
-func (m *man) CheckToken(token string, update bool) (string, *Claims, error) {
+func (m *DefaultManager) CheckToken(token string, update bool) (string, *Claims, error) {
 	var c *Claims
 	var err error
 	if c, err = parseToken(token); err != nil {
@@ -63,16 +84,38 @@ func (m *man) CheckToken(token string, update bool) (string, *Claims, error) {
 	return token, c, err
 }
 
-func (m *man) Create(u *User) (*User, error) {
-	var err error
-	var pwd []byte
-	if pwd, err = bcrypt.GenerateFromPassword([]byte(u.Password), 10); err != nil {
+func (m *DefaultManager) Create(u *User) (*User, error) {
+	ID, err := ulid.New(ulid.Timestamp(time.Now()), entropy)
+	if err != nil {
+		return nil, err
+	}
+	u.ID = ID.String()
+	pwd, err := bcrypt.GenerateFromPassword([]byte(u.Password), 10)
+	if err != nil {
 		return nil, err
 	}
 	u.Password = string(pwd)
-	//saves it in memory
-	m.users = append(m.users, u)
-	return u, nil
+	err = m.store.Save(u)
+	return u, err
+}
+
+func (m *DefaultManager) LoadUsers(file string, fs afero.Fs) error {
+	data, err := afero.ReadFile(fs, file)
+	if err != nil {
+		return err
+	}
+	var users []*User
+	err = yaml.Unmarshal(data, &users)
+	if err != nil {
+		return err
+	}
+	for _, u := range users {
+		err = m.store.Save(u)
+		if err != nil {
+			log.Errorf("error saving user %s: %s", u, err.Error())
+		}
+	}
+	return nil
 }
 
 func parseToken(tokenString string) (res *Claims, err error) {
@@ -81,7 +124,8 @@ func parseToken(tokenString string) (res *Claims, err error) {
 	res = new(Claims)
 	if token, err = jwt.ParseWithClaims(tokenString, res, func(token *jwt.Token) (interface{}, error) {
 		if _, ok = token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, goerr.NewError(fmt.Sprintf("Unexpected signing method: %v", token.Header["alg"]), goerr.BadRequest)
+			//fmt.Sprintf("Unexpected signing method: %v", token.Header["alg"])
+			return nil, ErrBadRequest
 		}
 		return secret, nil
 	}); err != nil {
@@ -89,7 +133,7 @@ func parseToken(tokenString string) (res *Claims, err error) {
 	}
 
 	if res, ok = token.Claims.(*Claims); !ok {
-		err = goerr.NewError("Could not parse token", goerr.BadRequest)
+		err = ErrBadRequest
 	}
 	return res, err
 

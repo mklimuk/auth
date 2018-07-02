@@ -30,3 +30,42 @@ func (m *ManagerMock) CheckToken(token string, update bool) (string, *Claims, er
 	}
 	return args.String(0), args.Get(1).(*Claims), args.Error(2)
 }
+
+type StoreMock struct {
+	mock.Mock
+}
+
+func (m *StoreMock) Save(u *User) error {
+	args := m.Called(u)
+	return args.Error(0)
+}
+
+func (m *StoreMock) Get(ID string) (*User, error) {
+	args := m.Called(ID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*User), args.Error(1)
+}
+func (m *StoreMock) ByUsername(username string) (*User, error) {
+	args := m.Called(username)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*User), args.Error(1)
+}
+
+func (m *StoreMock) Delete(ID string) (*User, error) {
+	args := m.Called(ID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*User), args.Error(1)
+}
+func (m *StoreMock) All(page, pageSize int) ([]*User, int, error) {
+	args := m.Called(page, pageSize)
+	if args.Get(0) == nil {
+		return nil, args.Int(1), args.Error(2)
+	}
+	return args.Get(0).([]*User), args.Int(1), args.Error(2)
+}
