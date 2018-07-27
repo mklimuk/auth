@@ -17,9 +17,10 @@ type checkRequest struct {
 
 func UserAPI(usr user.Manager) func(router chi.Router) {
 	return func(router chi.Router) {
+		router.Get("/", getAllHandler(usr))
 		router.Post("/login", loginHandler(usr))
 		router.Post("/logout", logoutHandler(usr))
-		router.Post("/user", createUserHandler(usr))
+		router.Post("/", createUserHandler(usr))
 		router.Put("/token/check", checkTokenHandler(usr))
 	}
 }
@@ -61,6 +62,19 @@ func loginHandler(users user.Manager) http.HandlerFunc {
 func logoutHandler(users user.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
+	}
+}
+
+func getAllHandler(users user.Manager) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		u, err := users.GetAll()
+		if err != nil {
+			log.Errorf("error getting list of all users: %s", err.Error())
+			renderErrorJSON(w, r, http.StatusInternalServerError, "wystąpił nieoczekiwany błąd podczas pobierania danych")
+			return
+		}
+		render.Status(r, http.StatusOK)
+		render.JSON(w, r, u)
 	}
 }
 

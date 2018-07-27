@@ -42,6 +42,7 @@ type Claims struct {
 type Manager interface {
 	Login(username, password string) (string, error)
 	Create(u *User) (*User, error)
+	GetAll() ([]*User, error)
 	CheckToken(token string, update bool) (string, *Claims, error)
 }
 
@@ -96,6 +97,11 @@ func (m *DefaultManager) Create(u *User) (*User, error) {
 	}
 	u.Password = string(pwd)
 	err = m.store.Save(u)
+	return u, err
+}
+
+func (m *DefaultManager) GetAll() ([]*User, error) {
+	u, _, err := m.store.All(0, 10)
 	return u, err
 }
 
