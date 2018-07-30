@@ -58,11 +58,13 @@ func NewDefaultManager(store Store) *DefaultManager {
 }
 
 func (m *DefaultManager) Login(username, password string) (string, error) {
+	log.Infof("signin request from user %s", username)
 	u, err := m.store.ByUsername(username)
 	if err != nil {
 		return "", err
 	}
 	if u == nil {
+		log.Infof("user %s not found in store", username)
 		return "", ErrNotFound
 	}
 	err = bcrypt.CompareHashAndPassword([]byte(u.Password), []byte(password))
