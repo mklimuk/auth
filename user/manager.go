@@ -113,6 +113,7 @@ func (m *DefaultManager) GetAll() ([]*User, error) {
 }
 
 func (m *DefaultManager) LoadUsers(file string, fs afero.Fs) error {
+	log.Infof("loading user accounts from %s", file)
 	data, err := afero.ReadFile(fs, file)
 	if err != nil {
 		return err
@@ -128,6 +129,7 @@ func (m *DefaultManager) LoadUsers(file string, fs afero.Fs) error {
 			log.Errorf("error saving user %s: %s", u, err.Error())
 		}
 	}
+	log.Infof("loaded %d users from %s", len(users), file)
 	return nil
 }
 

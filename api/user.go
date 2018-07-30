@@ -91,7 +91,7 @@ func loginHandler(users user.Manager) http.HandlerFunc {
 				renderErrorJSON(w, r, http.StatusBadRequest, "bad request")
 				return
 			}
-			if err == user.ErrWrongUserPass {
+			if err == user.ErrWrongUserPass || err == user.ErrNotFound {
 				renderErrorJSON(w, r, http.StatusUnauthorized, "wrong username or password")
 				return
 			}
