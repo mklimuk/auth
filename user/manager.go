@@ -42,6 +42,7 @@ type Claims struct {
 type Manager interface {
 	Login(username, password string) (string, error)
 	Create(u *User) (*User, error)
+	Get(ID string) (*User, error)
 	GetAll() ([]*User, error)
 	CheckToken(token string, update bool) (string, *Claims, error)
 }
@@ -56,7 +57,7 @@ func NewDefaultManager(store Store) *DefaultManager {
 	return m
 }
 
-func (m *DefaultManager) Login(username, password string) (token string, err error) {
+func (m *DefaultManager) Login(username, password string) (string, error) {
 	u, err := m.store.ByUsername(username)
 	if err != nil {
 		return "", err
@@ -64,8 +65,10 @@ func (m *DefaultManager) Login(username, password string) (token string, err err
 	if u == nil {
 		return "", ErrNotFound
 	}
-	if err = bcrypt.CompareHashAndPassword([]byte(u.Password), []byte(password)); err != nil {
-		return token, ErrWrongUserPass
+	err = bcrypt.CompareHashAndPassword([]byte(u.Password), []byte(password))
+	if err != nil {
+		log.Infof("unsuccessful login for %s", username)
+		return "", ErrWrongUserPass
 	}
 	return BuildToken(username, u.Name, u.Rigths)
 }
@@ -98,6 +101,10 @@ func (m *DefaultManager) Create(u *User) (*User, error) {
 	u.Password = string(pwd)
 	err = m.store.Save(u)
 	return u, err
+}
+
+func (m *DefaultManager) Get(ID string) (*User, error) {
+	return m.store.Get(ID)
 }
 
 func (m *DefaultManager) GetAll() ([]*User, error) {

@@ -22,6 +22,14 @@ func (m *ManagerMock) Create(u *User) (*User, error) {
 	return args.Get(0).(*User), args.Error(1)
 }
 
+func (m *ManagerMock) Get(ID string) (*User, error) {
+	args := m.Called(ID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*User), args.Error(1)
+}
+
 //GetAll is a mocked method
 func (m *ManagerMock) GetAll() ([]*User, error) {
 	args := m.Called()
