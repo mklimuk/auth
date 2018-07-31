@@ -63,7 +63,7 @@ func AuthMiddleware(usr user.Manager) func(http.Handler) http.Handler {
 			}
 			user, err := usr.Get(cs.Id)
 			if err != nil {
-				msg := fmt.Sprintf("error getting user: %s", err.Error())
+				msg := fmt.Sprintf("[auth-api] error getting user: %s", err.Error())
 				log.Errorf(msg)
 				renderErrorJSON(w, r, http.StatusInternalServerError, msg)
 				return
@@ -95,7 +95,7 @@ func loginHandler(users user.Manager) http.HandlerFunc {
 				renderErrorJSON(w, r, http.StatusUnauthorized, "wrong username or password")
 				return
 			}
-			msg := fmt.Sprintf("unexpected error during signin process for user %s: %s", usr.Username, err.Error())
+			msg := fmt.Sprintf("[auth-api] unexpected error during signin process for user %s: %s", usr.Username, err.Error())
 			log.Error(msg)
 			renderErrorJSON(w, r, http.StatusInternalServerError, msg)
 			return
@@ -115,8 +115,9 @@ func getAllHandler(users user.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		u, err := users.GetAll()
 		if err != nil {
-			log.Errorf("error getting list of all users: %s", err.Error())
-			renderErrorJSON(w, r, http.StatusInternalServerError, "wystąpił nieoczekiwany błąd podczas pobierania danych")
+			msg := fmt.Sprintf("[auth-api] error getting list of users: %s", err.Error())
+			log.Errorf(msg)
+			renderErrorJSON(w, r, http.StatusInternalServerError, msg)
 			return
 		}
 		render.Status(r, http.StatusOK)
@@ -143,8 +144,9 @@ func createUserHandler(users user.Manager) http.HandlerFunc {
 				renderErrorJSON(w, r, http.StatusConflict, "user already exists")
 				return
 			}
-			log.Errorf("unexpected error during user creation: %s", err.Error())
-			renderErrorJSON(w, r, http.StatusInternalServerError, "wystąpił nieoczekiwany błąd tworzenia konta")
+			msg := fmt.Sprintf("[auth-api] unexpected error during user creation: %s", err.Error())
+			log.Errorf(msg)
+			renderErrorJSON(w, r, http.StatusInternalServerError, msg)
 			return
 		}
 		render.Status(r, http.StatusOK)

@@ -13,7 +13,7 @@ import (
 	yaml "gopkg.in/yaml.v2"
 )
 
-var secret = []byte("Sample123")
+var secret = []byte("m!ch4l_")
 
 var entropy *rand.Rand
 
@@ -58,18 +58,18 @@ func NewDefaultManager(store Store) *DefaultManager {
 }
 
 func (m *DefaultManager) Login(username, password string) (string, error) {
-	log.Infof("signin request from user %s", username)
+	log.Infof("[auth-user] signin request from user %s", username)
 	u, err := m.store.ByUsername(username)
 	if err != nil {
 		return "", err
 	}
 	if u == nil {
-		log.Infof("user %s not found in store", username)
+		log.Infof("[auth-user] user %s not found in store", username)
 		return "", ErrNotFound
 	}
 	err = bcrypt.CompareHashAndPassword([]byte(u.Password), []byte(password))
 	if err != nil {
-		log.Infof("unsuccessful login for %s", username)
+		log.Infof("[auth-user] unsuccessful login for %s", username)
 		return "", ErrWrongUserPass
 	}
 	return BuildToken(username, u.Name, u.Rigths)
@@ -114,7 +114,7 @@ func (m *DefaultManager) GetAll() ([]*User, error) {
 }
 
 func (m *DefaultManager) LoadUsers(file string, fs afero.Fs) error {
-	log.Infof("loading user accounts from %s", file)
+	log.Infof("[auth-user] loading user accounts from %s", file)
 	data, err := afero.ReadFile(fs, file)
 	if err != nil {
 		return err
@@ -125,12 +125,12 @@ func (m *DefaultManager) LoadUsers(file string, fs afero.Fs) error {
 		return err
 	}
 	for _, u := range users {
-		err = m.store.Save(u)
+		_, err = m.Create(u)
 		if err != nil {
-			log.Errorf("error saving user %s: %s", u, err.Error())
+			log.Errorf("[auth-user] error creating user %s: %s", u.Username, err.Error())
 		}
 	}
-	log.Infof("loaded %d users from %s", len(users), file)
+	log.Infof("[auth-user] loaded %d users from %s", len(users), file)
 	return nil
 }
 

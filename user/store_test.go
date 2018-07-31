@@ -36,10 +36,14 @@ func (suite *StoreTestSuite) TestCreate() {
 	suite.NoError(err)
 	u, err = s.store.ByUsername("user1")
 	suite.NoError(err)
-	suite.Equal("uid1", u.ID)
+	if suite.NotNil(u) {
+		suite.Equal("uid1", u.ID)
+	}
 	users, err := s.store.All(0, 10)
 	suite.NoError(err)
-	suite.Len(users, 2)
+	if suite.NotNil(users) {
+		suite.Len(users, 2)
+	}
 
 }
 
