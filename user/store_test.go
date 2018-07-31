@@ -21,14 +21,25 @@ func (suite *StoreTestSuite) TestCreate() {
 	s, err := NewStoreWrapper()
 	suite.NoError(err)
 	u := &User{
-		ID:       "abcdef",
-		Username: "user",
+		ID:       "uid1",
+		Username: "user1",
 		Password: "pass",
 	}
-	s.store.Save(u)
-	u, err = s.store.ByUsername("user")
+	err = s.store.Save(u)
 	suite.NoError(err)
-	suite.Equal("abcdef", u.ID)
+	u = &User{
+		ID:       "uid2",
+		Username: "user2",
+		Password: "pass",
+	}
+	err = s.store.Save(u)
+	suite.NoError(err)
+	u, err = s.store.ByUsername("user1")
+	suite.NoError(err)
+	suite.Equal("uid1", u.ID)
+	users, err := s.store.All(0, 10)
+	suite.NoError(err)
+	suite.Len(users, 2)
 
 }
 

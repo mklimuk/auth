@@ -79,10 +79,10 @@ func (m *StoreMock) Delete(ID string) (*User, error) {
 	}
 	return args.Get(0).(*User), args.Error(1)
 }
-func (m *StoreMock) All(page, pageSize int) ([]*User, int, error) {
+func (m *StoreMock) All(page, pageSize int) ([]*User, error) {
 	args := m.Called(page, pageSize)
 	if args.Get(0) == nil {
-		return nil, args.Int(1), args.Error(2)
+		return nil, args.Error(1)
 	}
-	return args.Get(0).([]*User), args.Int(1), args.Error(2)
+	return args.Get(0).([]*User), args.Error(1)
 }

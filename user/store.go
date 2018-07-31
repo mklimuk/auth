@@ -15,7 +15,7 @@ type Store interface {
 	Get(ID string) (*User, error)
 	ByUsername(username string) (*User, error)
 	Delete(ID string) (*User, error)
-	All(page, pageSize int) ([]*User, int, error)
+	All(page, pageSize int) ([]*User, error)
 }
 
 type BoltStore struct {
@@ -32,10 +32,7 @@ func NewBoltStore(path string) (*BoltStore, error) {
 	if err != nil {
 		return s, err
 	}
-	if err = s.db.Init(new(User)); err != nil {
-		return s, err
-	}
-	return s, nil
+	return s, s.db.Init(new(User))
 }
 
 func (s *BoltStore) Save(u *User) error {
@@ -43,7 +40,7 @@ func (s *BoltStore) Save(u *User) error {
 	if err == storm.ErrAlreadyExists {
 		return ErrExists
 	}
-	return nil
+	return err
 }
 
 func (s *BoltStore) Get(ID string) (*User, error) {
@@ -75,6 +72,11 @@ func (s *BoltStore) Delete(ID string) (*User, error) {
 	return usr, s.db.DeleteStruct(usr)
 }
 
-func (s *BoltStore) All(page, pageSize int) ([]*User, int, error) {
-	return nil, 0, nil
+func (s *BoltStore) All(page, pageSize int) ([]*User, error) {
+	var res []*User
+	err := s.db.All(&res, storm.Skip(page*pageSize), storm.Limit(pageSize))
+	if err == storm.ErrNotFound {
+		return nil, nil
+	}
+	return res, err
 }

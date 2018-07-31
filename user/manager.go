@@ -110,8 +110,7 @@ func (m *DefaultManager) Get(ID string) (*User, error) {
 }
 
 func (m *DefaultManager) GetAll() ([]*User, error) {
-	u, _, err := m.store.All(0, 10)
-	return u, err
+	return m.store.All(0, 10)
 }
 
 func (m *DefaultManager) LoadUsers(file string, fs afero.Fs) error {
