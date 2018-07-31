@@ -124,13 +124,23 @@ func (m *DefaultManager) LoadUsers(file string, fs afero.Fs) error {
 	if err != nil {
 		return err
 	}
+	count := 0
 	for _, u := range users {
-		_, err = m.Create(u)
+		ID, err := ulid.New(ulid.Timestamp(time.Now()), entropy)
 		if err != nil {
 			log.Errorf("[auth-user] error creating user %s: %s", u.Username, err.Error())
+			continue
 		}
+		u.ID = ID.String()
+		err = m.store.Save(u)
+		if err != nil {
+			log.Errorf("[auth-user] error creating user %s: %s", u.Username, err.Error())
+			continue
+		}
+		count++
 	}
-	log.Infof("[auth-user] loaded %d users from %s", len(users), file)
+
+	log.Infof("[auth-user] loaded %d users from %s", count, file)
 	return nil
 }
 
