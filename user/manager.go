@@ -101,6 +101,9 @@ func (m *DefaultManager) Create(u *User) (*User, error) {
 		return nil, err
 	}
 	u.Password = string(pwd)
+	if m.store == nil {
+		return u, nil
+	}
 	err = m.store.Save(u)
 	return u, err
 }

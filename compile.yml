@@ -1,10 +1,14 @@
 version: '2'
 services:
-  auth_compile:
-    image: "golang:1.7-alpine"
-    environment:
-      GOBIN: /go/src/github.com/mklimuk/auth/dist
-      HUSAR_VERSION: acceptance
+  auth_cli:
+    image: "mklimuk/gobuild:1.9"
     volumes:
       - .:/go/src/github.com/mklimuk/auth
-    command: sh -c "go install -v github.com/mklimuk/auth"
+    environment:
+      - VERSION
+      - GITCOMMIT
+      - GITBRANCH
+      - BUILDTIME
+      - GOCACHE=/go/src/github.com/mklimuk/auth/.cache
+    command: sh -c "CGO_ENABLED=0 go build -ldflags '-s -w -X github.com/mklimuk/auth/config.Version=$VERSION -X github.com/mklimuk/auth/config.GitCommit=$GITCOMMIT -X github.com/mklimuk/auth/config.GitBranch=$GITBRANCH -X github.com/mklimuk/auth/config.BuildTime=$BUILDTIME' -o /go/src/github.com/mklimuk/auth/dist/x64/auth-cli -v github.com/mklimuk/auth/app/cli"
+

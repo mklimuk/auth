@@ -1,39 +1,37 @@
 package config
 
 import (
-	"io/ioutil"
 	"os"
-
-	log "github.com/sirupsen/logrus"
 )
 
 /*
-Version encapsulates application version and environment information
+VersionContext encapsulates application version and environment information
 */
-type Version struct {
+type VersionContext struct {
 	APIVersion  string `json:"apiVersion"`
 	Environment string `json:"env"`
 	Version     string `json:"version"`
+	GitCommit   string `json:"commit"`
+	GitBranch   string `json:"branch"`
+	BuildTime   string `json:"buildTime"`
 }
-
-//Ver represents application version information
-var Ver Version
 
 const apiVersion = "1.0"
 
-/*
-ParseVersion parses the version file into Version
-*/
-func ParseVersion(path string) {
-	var (
-		v   []byte
-		err error
-	)
-	if v, err = ioutil.ReadFile(path); err != nil {
-		log.WithFields(log.Fields{"logger": "pc.config.version", "file": path}).
-			Panicln("Could not read the version file")
+var Version = "latest"
+var GitCommit = "..."
+var GitBranch = "local"
+var BuildTime = ""
+
+func GetVersion() *VersionContext {
+	return &VersionContext{
+		Version:     Version,
+		APIVersion:  apiVersion,
+		Environment: getEnv("ENV", "devel"),
+		GitCommit:   GitCommit,
+		GitBranch:   GitBranch,
+		BuildTime:   BuildTime,
 	}
-	Ver = Version{apiVersion, getEnv("ENV", "devel"), string(v)}
 }
 
 //getEnv returns environment variable if it is set or defaultValue otherwise
