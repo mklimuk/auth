@@ -45,6 +45,7 @@ type Manager interface {
 	Get(ID string) (*User, error)
 	GetAll() ([]*User, error)
 	CheckToken(token string, update bool) (string, *Claims, error)
+	ValidToken(token string) bool
 }
 
 type DefaultManager struct {
@@ -73,6 +74,11 @@ func (m *DefaultManager) Login(username, password string) (string, error) {
 		return "", ErrWrongUserPass
 	}
 	return BuildToken(username, u.Name, u.Rigths)
+}
+
+func (m *DefaultManager) ValidToken(token string) bool {
+	_, _, err := m.CheckToken(token, false)
+	return err == nil
 }
 
 func (m *DefaultManager) CheckToken(token string, update bool) (string, *Claims, error) {

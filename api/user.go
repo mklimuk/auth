@@ -61,10 +61,6 @@ func AuthMiddleware(usr user.Manager) func(http.Handler) http.Handler {
 		fn := func(w http.ResponseWriter, r *http.Request) {
 			token := parseHeader(r, "Authorization")
 			if token == "" {
-				// websocket hack
-				token = parseHeader(r, "Sec-WebSocket-Protocol")
-			}
-			if token == "" {
 				renderErrorJSON(w, r, http.StatusUnauthorized, "authorization bearer token not present")
 				return
 			}

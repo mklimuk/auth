@@ -48,6 +48,11 @@ func (m *ManagerMock) CheckToken(token string, update bool) (string, *Claims, er
 	return args.String(0), args.Get(1).(*Claims), args.Error(2)
 }
 
+func (m *ManagerMock) ValidToken(token string) bool {
+	args := m.Called(token)
+	return args.Bool(0)
+}
+
 type StoreMock struct {
 	mock.Mock
 }
