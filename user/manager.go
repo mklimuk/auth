@@ -164,6 +164,11 @@ func parseToken(tokenString string) (res *Claims, err error) {
 	if res, ok = token.Claims.(*Claims); !ok {
 		err = ErrBadRequest
 	}
+	now := time.Now()
+	deadline := time.Unix(res.ExpiresAt, 0).In(now.Location())
+	if deadline.Before(now) {
+		return nil, ErrUnauthorized
+	}
 	return res, err
 
 }

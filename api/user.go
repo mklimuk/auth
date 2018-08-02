@@ -70,6 +70,7 @@ func AuthMiddleware(usr user.Manager) func(http.Handler) http.Handler {
 			}
 			token, cs, err := usr.CheckToken(token, true)
 			if err != nil {
+				log.Infof("[auth-api] authorization error: %s", err.Error())
 				renderErrorJSON(w, r, http.StatusUnauthorized, fmt.Sprintf("unauthorized: %s", err.Error()))
 				return
 			}
