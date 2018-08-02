@@ -25,6 +25,7 @@ func UserAPI(usr user.Manager) func(chi.Router) {
 		protect := r.With(AuthMiddleware(usr))
 		protect.Get("/", getAllHandler(usr))
 		protect.Post("/", createUserHandler(usr))
+		protect.Get("/token/renew", renewTokenHandler())
 	}
 }
 
@@ -47,15 +48,26 @@ func GetUser(c context.Context) *user.User {
 	return u.(*userContext).User
 }
 
+func parseHeader(r *http.Request, header string) string {
+	h := r.Header.Get("Authorization")
+	if !strings.HasPrefix(h, "Bearer ") {
+		return ""
+	}
+	return strings.TrimPrefix(h, "Bearer ")
+}
+
 func AuthMiddleware(usr user.Manager) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		fn := func(w http.ResponseWriter, r *http.Request) {
-			h := r.Header.Get("Authorization")
-			if !strings.HasPrefix(h, "Bearer ") {
+			token := parseHeader(r, "Authorization")
+			if token == "" {
+				// websocket hack
+				token = parseHeader(r, "Sec-WebSocket-Protocol")
+			}
+			if token == "" {
 				renderErrorJSON(w, r, http.StatusUnauthorized, "authorization bearer token not present")
 				return
 			}
-			token := strings.TrimPrefix(h, "Bearer ")
 			token, cs, err := usr.CheckToken(token, true)
 			if err != nil {
 				renderErrorJSON(w, r, http.StatusUnauthorized, fmt.Sprintf("unauthorized: %s", err.Error()))
@@ -68,7 +80,9 @@ func AuthMiddleware(usr user.Manager) func(http.Handler) http.Handler {
 				renderErrorJSON(w, r, http.StatusInternalServerError, msg)
 				return
 			}
-			w.Header().Set("Authorization", fmt.Sprintf("Bearer %s", token))
+			if r.Header.Get("X-Auth-Renew") == "1" {
+				w.Header().Set("Authorization", fmt.Sprintf("Bearer %s", token))
+			}
 			c := context.WithValue(r.Context(), ctxUser, &userContext{Claims: cs, User: user})
 			next.ServeHTTP(w, r.WithContext(c))
 		}
@@ -151,6 +165,13 @@ func createUserHandler(users user.Manager) http.HandlerFunc {
 		}
 		render.Status(r, http.StatusOK)
 		render.JSON(w, r, usr)
+	}
+}
+
+func renewTokenHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// the renewal process is handled by the middleware
+		w.WriteHeader(http.StatusOK)
 	}
 }
 
