@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"strings"
@@ -11,6 +10,8 @@ import (
 	"github.com/mklimuk/auth/user"
 	log "github.com/sirupsen/logrus"
 )
+
+const adminRights = 7
 
 type checkRequest struct {
 	Token  string `json:"token"`
@@ -27,25 +28,6 @@ func UserAPI(usr user.Manager) func(chi.Router) {
 		protect.Post("/", createUserHandler(usr))
 		protect.Get("/token/renew", renewTokenHandler())
 	}
-}
-
-type ctx int
-
-const (
-	ctxUser ctx = iota
-)
-
-type userContext struct {
-	User   *user.User
-	Claims *user.Claims
-}
-
-func GetUser(c context.Context) *user.User {
-	u := c.Value(ctxUser)
-	if u == nil {
-		return nil
-	}
-	return u.(*userContext).User
 }
 
 func parseHeader(r *http.Request, header string) string {
@@ -70,7 +52,7 @@ func AuthMiddleware(usr user.Manager) func(http.Handler) http.Handler {
 				renderErrorJSON(w, r, http.StatusUnauthorized, fmt.Sprintf("unauthorized: %s", err.Error()))
 				return
 			}
-			user, err := usr.Get(cs.Id)
+			u, err := usr.Get(cs.Id)
 			if err != nil {
 				msg := fmt.Sprintf("[auth-api] error getting user: %s", err.Error())
 				log.Errorf(msg)
@@ -80,8 +62,7 @@ func AuthMiddleware(usr user.Manager) func(http.Handler) http.Handler {
 			if r.Header.Get("X-Auth-Renew") == "1" {
 				w.Header().Set("Authorization", fmt.Sprintf("Bearer %s", token))
 			}
-			c := context.WithValue(r.Context(), ctxUser, &userContext{Claims: cs, User: user})
-			next.ServeHTTP(w, r.WithContext(c))
+			next.ServeHTTP(w, r.WithContext(user.Wrap(r.Context(), u, cs)))
 		}
 		return http.HandlerFunc(fn)
 	}
@@ -138,6 +119,10 @@ func getAllHandler(users user.Manager) http.HandlerFunc {
 
 func createUserHandler(users user.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		u := user.Get(r.Context())
+		if u == nil || u.Rigths < adminRights {
+			renderErrorJSON(w, r, http.StatusUnauthorized, "operation unauthorized")
+		}
 		usr := new(user.User)
 		defer r.Body.Close()
 		err := render.DecodeJSON(r.Body, usr)

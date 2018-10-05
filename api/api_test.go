@@ -31,7 +31,7 @@ func (suite *APITestSuite) SetupSuite() {
 
 func testCtxHandler(suite *APITestSuite) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		u := GetUser(r.Context())
+		u := user.Get(r.Context())
 		if suite.NotNil(u) {
 			suite.Equal("test1", u.Username)
 		}
