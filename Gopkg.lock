@@ -42,14 +42,6 @@
   version = "v3.1.0"
 
 [[projects]]
-  digest = "1:75f324f9a6b76bca2fdd087ba169de30bc28a95a7139a6cefd5a9ac7582f6dab"
-  name = "github.com/go-chi/render"
-  packages = ["."]
-  pruneopts = "UT"
-  revision = "9f855fadd4b8cde7773f9ef51f6b2705af239519"
-  version = "v1.0.0"
-
-[[projects]]
   digest = "1:e25f71dc198d4f3285f663d1d32b90b219a5e680ac5cc77ace86f663f6d68baf"
   name = "github.com/oklog/ulid"
   packages = ["."]
@@ -166,7 +158,6 @@
     "github.com/asdine/storm",
     "github.com/asdine/storm/codec/gob",
     "github.com/dgrijalva/jwt-go",
-    "github.com/go-chi/render",
     "github.com/oklog/ulid",
     "github.com/pkg/errors",
     "github.com/sirupsen/logrus",
