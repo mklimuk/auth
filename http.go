@@ -1,33 +1,50 @@
-package api
+package auth
 
 import (
 	"fmt"
 	"net/http"
 	"strings"
 
-	"github.com/go-chi/chi"
 	"github.com/go-chi/render"
-	"github.com/mklimuk/auth/user"
 	log "github.com/sirupsen/logrus"
 )
+
+//Manager is an access layer for user-related operations
+type UserLoginHandler interface {
+	Login(username, password string) (string, error)
+}
+
+type UserLogoutHandler interface {
+	Logout(User) error
+}
+
+type UserReader interface {
+	Get(string, *User) error
+}
+
+type UserAdmin interface {
+	Create(*User) error
+	GetAll() ([]*User, error)
+}
+
+type TokenChecker interface {
+	CheckToken(token string, update bool) (string, *Claims, error)
+}
+
+type UserTokenChecker interface {
+	UserReader
+	TokenChecker
+}
+
+type TokenValidator interface {
+	ValidToken(token string) bool
+}
 
 const adminRights = 7
 
 type checkRequest struct {
 	Token  string `json:"token"`
 	Update bool   `json:"update"`
-}
-
-func UserAPI(usr user.Manager) func(chi.Router) {
-	return func(r chi.Router) {
-		r.Post("/login", loginHandler(usr))
-		r.Post("/logout", logoutHandler(usr))
-		r.Put("/token/check", checkTokenHandler(usr))
-		protect := r.With(AuthMiddleware(usr))
-		protect.Get("/", getAllHandler(usr))
-		protect.Post("/", createUserHandler(usr))
-		protect.Get("/token/renew", renewTokenHandler())
-	}
 }
 
 func parseHeader(r *http.Request, header string) string {
@@ -38,7 +55,7 @@ func parseHeader(r *http.Request, header string) string {
 	return strings.TrimPrefix(h, "Bearer ")
 }
 
-func AuthMiddleware(usr user.Manager) func(http.Handler) http.Handler {
+func AuthMiddleware(auth UserTokenChecker) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		fn := func(w http.ResponseWriter, r *http.Request) {
 			token := parseHeader(r, "Authorization")
@@ -46,15 +63,17 @@ func AuthMiddleware(usr user.Manager) func(http.Handler) http.Handler {
 				renderErrorJSON(w, r, http.StatusUnauthorized, "authorization bearer token not present")
 				return
 			}
-			token, cs, err := usr.CheckToken(token, true)
+			token, cs, err := auth.CheckToken(token, true)
 			if err != nil {
-				log.Infof("[auth-api] authorization error: %s", err.Error())
+				log.Infof("[auth_api] authorization error: %s", err.Error())
 				renderErrorJSON(w, r, http.StatusUnauthorized, fmt.Sprintf("unauthorized: %s", err.Error()))
 				return
 			}
-			u, err := usr.Get(cs.Id)
+			u := newUser()
+			defer returnUser(u)
+			err = auth.Get(cs.Id, u)
 			if err != nil {
-				msg := fmt.Sprintf("[auth-api] error getting user: %s", err.Error())
+				msg := fmt.Sprintf("[auth_api] error getting user: %s", err.Error())
 				log.Errorf(msg)
 				renderErrorJSON(w, r, http.StatusInternalServerError, msg)
 				return
@@ -62,32 +81,45 @@ func AuthMiddleware(usr user.Manager) func(http.Handler) http.Handler {
 			if r.Header.Get("X-Auth-Renew") == "1" {
 				w.Header().Set("Authorization", fmt.Sprintf("Bearer %s", token))
 			}
-			next.ServeHTTP(w, r.WithContext(user.Wrap(r.Context(), u, cs)))
+			next.ServeHTTP(w, r.WithContext(Wrap(r.Context(), u, cs)))
 		}
 		return http.HandlerFunc(fn)
 	}
 }
 
-func loginHandler(users user.Manager) http.HandlerFunc {
+func LogoutHandler(auth UserLogoutHandler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		usr := new(user.User)
+		u := Get(r.Context())
+		err := auth.Logout(u)
+		if err != nil {
+			msg := fmt.Sprintf("[auth_api] unexpected error during user '%s' logout: %s", u.Username, err.Error())
+			log.Error(msg)
+			renderErrorJSON(w, r, http.StatusInternalServerError, msg)
+			return
+		}
+	}
+}
+
+func LoginHandler(auth UserLoginHandler) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		usr := new(User)
 		defer r.Body.Close()
 		err := render.DecodeJSON(r.Body, usr)
 		if err != nil {
 			renderErrorJSON(w, r, http.StatusBadRequest, err.Error())
 			return
 		}
-		token, err := users.Login(usr.Username, usr.Password)
+		token, err := auth.Login(usr.Username, usr.Password)
 		if err != nil {
-			if err == user.ErrBadRequest {
+			if err == ErrBadRequest {
 				renderErrorJSON(w, r, http.StatusBadRequest, "bad request")
 				return
 			}
-			if err == user.ErrWrongUserPass || err == user.ErrNotFound {
+			if err == ErrWrongUserPass || err == ErrNotFound {
 				renderErrorJSON(w, r, http.StatusUnauthorized, "wrong username or password")
 				return
 			}
-			msg := fmt.Sprintf("[auth-api] unexpected error during signin process for user %s: %s", usr.Username, err.Error())
+			msg := fmt.Sprintf("[auth_api] unexpected error during user '%s' signin: %s", usr.Username, err.Error())
 			log.Error(msg)
 			renderErrorJSON(w, r, http.StatusInternalServerError, msg)
 			return
@@ -97,50 +129,48 @@ func loginHandler(users user.Manager) http.HandlerFunc {
 	}
 }
 
-func logoutHandler(users user.Manager) http.HandlerFunc {
+func GetAllHandler(auth UserAdmin) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}
-}
-
-func getAllHandler(users user.Manager) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		u, err := users.GetAll()
+		u := Get(r.Context())
+		if u.Rigths < adminRights {
+			renderErrorJSON(w, r, http.StatusUnauthorized, "operation unauthorized")
+		}
+		users, err := auth.GetAll()
 		if err != nil {
-			msg := fmt.Sprintf("[auth-api] error getting list of users: %s", err.Error())
+			msg := fmt.Sprintf("[auth_api] error getting list of users: %s", err.Error())
 			log.Errorf(msg)
 			renderErrorJSON(w, r, http.StatusInternalServerError, msg)
 			return
 		}
 		render.Status(r, http.StatusOK)
-		render.JSON(w, r, u)
+		render.JSON(w, r, users)
 	}
 }
 
-func createUserHandler(users user.Manager) http.HandlerFunc {
+func CreateUserHandler(auth UserAdmin) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		u := user.Get(r.Context())
-		if u == nil || u.Rigths < adminRights {
+		u := Get(r.Context())
+		if u.Rigths < adminRights {
 			renderErrorJSON(w, r, http.StatusUnauthorized, "operation unauthorized")
 		}
-		usr := new(user.User)
+		usr := new(User)
 		defer r.Body.Close()
 		err := render.DecodeJSON(r.Body, usr)
 		if err != nil {
 			renderErrorJSON(w, r, http.StatusBadRequest, err.Error())
 			return
 		}
-		usr, err = users.Create(usr)
+		err = auth.Create(usr)
 		if err != nil {
-			if err == user.ErrBadRequest {
+			if err == ErrBadRequest {
 				renderErrorJSON(w, r, http.StatusBadRequest, "bad request")
 				return
 			}
-			if err == user.ErrExists {
+			if err == ErrExists {
 				renderErrorJSON(w, r, http.StatusConflict, "user already exists")
 				return
 			}
-			msg := fmt.Sprintf("[auth-api] unexpected error during user creation: %s", err.Error())
+			msg := fmt.Sprintf("[auth_api] unexpected error during user creation: %s", err.Error())
 			log.Errorf(msg)
 			renderErrorJSON(w, r, http.StatusInternalServerError, msg)
 			return
@@ -150,14 +180,7 @@ func createUserHandler(users user.Manager) http.HandlerFunc {
 	}
 }
 
-func renewTokenHandler() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		// the renewal process is handled by the middleware
-		w.WriteHeader(http.StatusOK)
-	}
-}
-
-func checkTokenHandler(users user.Manager) http.HandlerFunc {
+func CheckTokenHandler(auth TokenChecker) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		req := new(checkRequest)
 		defer r.Body.Close()
@@ -166,15 +189,15 @@ func checkTokenHandler(users user.Manager) http.HandlerFunc {
 			renderErrorJSON(w, r, http.StatusBadRequest, err.Error())
 			return
 		}
-		token, cs, err := users.CheckToken(req.Token, req.Update)
+		token, cs, err := auth.CheckToken(req.Token, req.Update)
 		if err != nil {
 			renderErrorJSON(w, r, http.StatusUnauthorized, fmt.Sprintf("error checking token: %s", err.Error()))
 			return
 		}
 		render.Status(r, http.StatusOK)
 		render.JSON(w, r, struct {
-			Token  string       `json:"token"`
-			Claims *user.Claims `json:"claims"`
+			Token  string  `json:"token"`
+			Claims *Claims `json:"claims"`
 		}{
 			Token:  token,
 			Claims: cs,

@@ -1,25 +1,70 @@
-package user
+package auth
 
 import (
+	"context"
 	"fmt"
 	"math/rand"
+	"os"
+	"sync"
 	"time"
 
 	jwt "github.com/dgrijalva/jwt-go"
 	"github.com/oklog/ulid"
+	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"golang.org/x/crypto/bcrypt"
 	yaml "gopkg.in/yaml.v2"
 )
 
-var secret = []byte("m!ch4l_")
+var secret []byte
 
 var entropy *rand.Rand
+
+var userPool *sync.Pool
+var claimsPool *sync.Pool
 
 func init() {
 	t := time.Unix(1000000, 0)
 	entropy = rand.New(rand.NewSource(t.UnixNano()))
+	secret = []byte(os.Getenv("AUTH_SECRET"))
+	userPool = &sync.Pool{
+		New: func() interface{} {
+			return new(User)
+		},
+	}
+	claimsPool = &sync.Pool{
+		New: func() interface{} {
+			return new(Claims)
+		},
+	}
+}
+
+var empty = ""
+
+func newUser() *User {
+	return userPool.New().(*User)
+}
+
+func returnUser(u *User) {
+	u.ID = empty
+	u.Name = empty
+	u.Password = empty
+	u.Username = empty
+	u.Rigths = 0
+	userPool.Put(u)
+}
+
+func newClaims() *Claims {
+	return claimsPool.New().(*Claims)
+}
+
+func returnClaims(c *Claims) {
+	c.Username = empty
+	c.Name = empty
+	c.Permissions = 0
+	c.ExpiresAt = 0
+	claimsPool.Put(c)
 }
 
 var (
@@ -30,22 +75,44 @@ var (
 	ErrWrongUserPass = fmt.Errorf("wrong username or password")
 )
 
+type ctx int
+
+const (
+	ctxUser ctx = iota
+)
+
+type userContext struct {
+	User   *User
+	Claims *Claims
+}
+
+func Wrap(ctx context.Context, user *User, cs *Claims) context.Context {
+	return context.WithValue(ctx, ctxUser, &userContext{Claims: cs, User: user})
+}
+
+func Get(c context.Context) User {
+	u := c.Value(ctxUser)
+	if u == nil {
+		panic("[auth] misuse of Get method; no user in context")
+	}
+	return *u.(*userContext).User
+}
+
+//User contains user properties
+type User struct {
+	ID       string `json:"id" yaml:"id" storm:"unique"`
+	Username string `json:"username" yaml:"username" storm:"unique"`
+	Name     string `json:"name" yaml:"name"`
+	Password string `json:"password" yaml:"password"`
+	Rigths   int    `json:"rights" yaml:"rights"`
+}
+
 //Claims contains specific claims used in the auth system
 type Claims struct {
 	jwt.StandardClaims
 	Username    string `json:"username"`
 	Name        string `json:"name"`
 	Permissions int    `json:"permissions"`
-}
-
-//Manager is an access layer for user-related operations
-type Manager interface {
-	Login(username, password string) (string, error)
-	Create(u *User) (*User, error)
-	Get(ID string) (*User, error)
-	GetAll() ([]*User, error)
-	CheckToken(token string, update bool) (string, *Claims, error)
-	ValidToken(token string) bool
 }
 
 type DefaultManager struct {
@@ -60,7 +127,9 @@ func NewDefaultManager(store Store) *DefaultManager {
 
 func (m *DefaultManager) Login(username, password string) (string, error) {
 	log.Infof("[auth-user] signin request from user %s", username)
-	u, err := m.store.ByUsername(username)
+	u := newUser()
+	defer returnUser(u)
+	err := m.store.ByUsername(username, u)
 	if err != nil {
 		return "", err
 	}
@@ -77,23 +146,26 @@ func (m *DefaultManager) Login(username, password string) (string, error) {
 }
 
 func (m *DefaultManager) ValidToken(token string) bool {
-	_, _, err := m.CheckToken(token, false)
+	c := newClaims()
+	defer returnClaims(c)
+	_, err := m.CheckToken(token, false, c)
 	return err == nil
 }
 
-func (m *DefaultManager) CheckToken(token string, update bool) (string, *Claims, error) {
-	var c *Claims
-	var err error
-	if c, err = parseToken(token); err != nil {
-		return token, c, err
+func (m *DefaultManager) CheckToken(token string, update bool, c *Claims) (string, error) {
+	err := parseToken(token, c)
+	if err != nil {
+		return token, err
 	}
 	if update {
-		var updated string
-		if updated, err = BuildToken(c.Username, c.Name, c.Permissions); err == nil {
-			return updated, c, err
+		updated, err := BuildToken(c.Username, c.Name, c.Permissions)
+		if err != nil {
+			fmt.Printf("test update error: %v\n", err.Error())
+			return token, err
 		}
+		return updated, nil
 	}
-	return token, c, err
+	return token, nil
 }
 
 func (m *DefaultManager) Create(u *User) (*User, error) {
@@ -114,8 +186,12 @@ func (m *DefaultManager) Create(u *User) (*User, error) {
 	return u, err
 }
 
-func (m *DefaultManager) Get(ID string) (*User, error) {
-	return m.store.Get(ID)
+func (m *DefaultManager) Get(ID string, u *User) error {
+	err := m.store.Get(ID, u)
+	if err != nil {
+		return err
+	}
+	return err
 }
 
 func (m *DefaultManager) GetAll() ([]*User, error) {
@@ -153,42 +229,34 @@ func (m *DefaultManager) LoadUsers(file string, fs afero.Fs) error {
 	return nil
 }
 
-func parseToken(tokenString string) (res *Claims, err error) {
-	var ok bool
-	var token *jwt.Token
-	res = new(Claims)
-	if token, err = jwt.ParseWithClaims(tokenString, res, func(token *jwt.Token) (interface{}, error) {
-		if _, ok = token.Method.(*jwt.SigningMethodHMAC); !ok {
-			//fmt.Sprintf("Unexpected signing method: %v", token.Header["alg"])
+func parseToken(tokenString string, c *Claims) error {
+	_, err := jwt.ParseWithClaims(tokenString, c, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, ErrBadRequest
 		}
 		return secret, nil
-	}); err != nil {
-		return res, err
+	})
+	if err != nil {
+		return errors.Wrap(err, "could not parse token")
 	}
 
-	if res, ok = token.Claims.(*Claims); !ok {
-		err = ErrBadRequest
-	}
 	now := time.Now()
-	deadline := time.Unix(res.ExpiresAt, 0).In(now.Location())
+	deadline := time.Unix(c.ExpiresAt, 0).In(now.Location())
 	if deadline.Before(now) {
-		return nil, ErrUnauthorized
+		return ErrUnauthorized
 	}
-	return res, err
-
+	return nil
 }
 
 //BuildToken builds a JWT token with custom claims
 func BuildToken(username, fullName string, rights int) (string, error) {
 	ttl := time.Now().Add(time.Duration(30) * time.Minute)
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, Claims{
-		Username:    username,
-		Name:        fullName,
-		Permissions: rights,
-		StandardClaims: jwt.StandardClaims{
-			ExpiresAt: ttl.Unix(),
-		},
-	})
+	c := newClaims()
+	defer returnClaims(c)
+	c.Username = username
+	c.Name = fullName
+	c.Permissions = rights
+	c.ExpiresAt = ttl.Unix()
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, *c)
 	return token.SignedString(secret)
 }

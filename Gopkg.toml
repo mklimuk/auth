@@ -24,34 +24,13 @@
 #   go-tests = true
 #   unused-packages = true
 
-
-[[constraint]]
-  name = "github.com/DATA-DOG/godog"
-  version = "0.7.4"
-
 [[constraint]]
   name = "github.com/dgrijalva/jwt-go"
   version = "3.1.0"
 
 [[constraint]]
-  name = "github.com/fsnotify/fsnotify"
-  version = "1.4.7"
-
-[[constraint]]
-  name = "github.com/go-chi/chi"
-  version = "3.3.2"
-
-[[constraint]]
-  branch = "master"
-  name = "github.com/jpillora/overseer"
-
-[[constraint]]
   name = "github.com/sirupsen/logrus"
   version = "1.0.4"
-
-[[constraint]]
-  name = "github.com/spf13/viper"
-  version = "1.0.0"
 
 [[constraint]]
   name = "github.com/stretchr/testify"
@@ -65,14 +44,15 @@
   name = "gopkg.in/yaml.v2"
   version = "2.2.1"
 
-[prune]
-  go-tests = true
-  unused-packages = true
-
 [[constraint]]
   name = "github.com/oklog/ulid"
   version = "0.3.0"
 
 [[constraint]]
-  name = "github.com/urfave/cli"
-  version = "1.20.0"
+  name = "github.com/pkg/errors"
+  version = "0.8.0"
+
+[prune]
+  go-tests = true
+  unused-packages = true
+

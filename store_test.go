@@ -1,4 +1,4 @@
-package user
+package auth
 
 import (
 	"io/ioutil"
@@ -34,10 +34,12 @@ func (suite *StoreTestSuite) TestCreate() {
 	}
 	err = s.store.Save(u)
 	suite.NoError(err)
-	u, err = s.store.ByUsername("user1")
+	usr := newUser()
+	defer returnUser(usr)
+	err = s.store.ByUsername("user1", usr)
 	suite.NoError(err)
-	if suite.NotNil(u) {
-		suite.Equal("uid1", u.ID)
+	if suite.NotNil(usr) {
+		suite.Equal("uid1", usr.ID)
 	}
 	users, err := s.store.All(0, 10)
 	suite.NoError(err)

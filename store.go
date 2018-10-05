@@ -1,4 +1,4 @@
-package user
+package auth
 
 import (
 	"github.com/asdine/storm"
@@ -11,10 +11,10 @@ const (
 )
 
 type Store interface {
-	Save(u *User) error
-	Get(ID string) (*User, error)
-	ByUsername(username string) (*User, error)
-	Delete(ID string) (*User, error)
+	Save(*User) error
+	Get(string, *User) error
+	ByUsername(string, *User) error
+	Delete(string) error
 	All(page, pageSize int) ([]*User, error)
 }
 
@@ -43,33 +43,33 @@ func (s *BoltStore) Save(u *User) error {
 	return err
 }
 
-func (s *BoltStore) Get(ID string) (*User, error) {
-	res := new(User)
-	err := s.db.One("ID", ID, res)
+func (s *BoltStore) Get(ID string, u *User) error {
+	err := s.db.One("ID", ID, u)
 	if err == storm.ErrNotFound {
-		return nil, nil
+		return nil
 	}
-	return res, err
+	return err
 }
 
-func (s *BoltStore) ByUsername(username string) (*User, error) {
-	res := new(User)
-	err := s.db.One("Username", username, res)
+func (s *BoltStore) ByUsername(username string, u *User) error {
+	err := s.db.One("Username", username, u)
 	if err == storm.ErrNotFound {
-		return nil, nil
+		return nil
 	}
-	return res, err
+	return err
 }
 
-func (s *BoltStore) Delete(ID string) (*User, error) {
-	usr, err := s.Get(ID)
+func (s *BoltStore) Delete(ID string) error {
+	usr := newUser()
+	defer returnUser(usr)
+	err := s.Get(ID, usr)
 	if err != nil {
-		return usr, err
+		return err
 	}
 	if usr == nil {
-		return nil, ErrNotFound
+		return ErrNotFound
 	}
-	return usr, s.db.DeleteStruct(usr)
+	return s.db.DeleteStruct(usr)
 }
 
 func (s *BoltStore) All(page, pageSize int) ([]*User, error) {
