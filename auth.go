@@ -145,6 +145,11 @@ func (m *DefaultManager) Login(username, password string) (string, error) {
 	return BuildToken(username, u.Name, u.Rigths)
 }
 
+func (m *DefaultManager) Logout(User) error {
+	// TODO: add logout hooks support
+	return nil
+}
+
 func (m *DefaultManager) ValidToken(token string) bool {
 	c := newClaims()
 	defer returnClaims(c)
@@ -168,22 +173,21 @@ func (m *DefaultManager) CheckToken(token string, update bool, c *Claims) (strin
 	return token, nil
 }
 
-func (m *DefaultManager) Create(u *User) (*User, error) {
+func (m *DefaultManager) Create(u *User) error {
 	ID, err := ulid.New(ulid.Timestamp(time.Now()), entropy)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	u.ID = ID.String()
 	pwd, err := bcrypt.GenerateFromPassword([]byte(u.Password), 10)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	u.Password = string(pwd)
 	if m.store == nil {
-		return u, nil
+		return nil
 	}
-	err = m.store.Save(u)
-	return u, err
+	return m.store.Save(u)
 }
 
 func (m *DefaultManager) Get(ID string, u *User) error {

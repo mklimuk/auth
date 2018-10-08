@@ -27,8 +27,7 @@ func (suite *ManagerTestSuite) TestCreate() {
 	s.On("Save", mock.AnythingOfType("*auth.User")).Return(nil)
 	m := NewDefaultManager(s)
 	usr := &User{Username: "test", Password: "test123", Name: "test test", Rigths: 7}
-	var err error
-	_, err = m.Create(usr)
+	err := m.Create(usr)
 	a.NoError(err)
 }
 

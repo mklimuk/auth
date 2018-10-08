@@ -31,7 +31,7 @@ type UserAdmin interface {
 }
 
 type TokenChecker interface {
-	CheckToken(token string, update bool) (string, *Claims, error)
+	CheckToken(string, bool, *Claims) (string, error)
 }
 
 type UserTokenChecker interface {
@@ -66,7 +66,9 @@ func AuthMiddleware(auth UserTokenChecker) func(http.Handler) http.Handler {
 				renderErrorJSON(w, http.StatusUnauthorized, "authorization bearer token not present")
 				return
 			}
-			token, cs, err := auth.CheckToken(token, true)
+			cs := newClaims()
+			defer returnClaims(cs)
+			token, err := auth.CheckToken(token, true, cs)
 			if err != nil {
 				log.Infof("[auth_api] authorization error: %s", err.Error())
 				renderErrorJSON(w, http.StatusUnauthorized, fmt.Sprintf("unauthorized: %s", err.Error()))
@@ -192,7 +194,9 @@ func CheckTokenHandler(auth TokenChecker) http.HandlerFunc {
 			renderErrorJSON(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		token, cs, err := auth.CheckToken(req.Token, req.Update)
+		cs := newClaims()
+		defer returnClaims(cs)
+		token, err := auth.CheckToken(req.Token, req.Update, cs)
 		if err != nil {
 			renderErrorJSON(w, http.StatusUnauthorized, fmt.Sprintf("error checking token: %s", err.Error()))
 			return

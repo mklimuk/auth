@@ -15,7 +15,6 @@ import (
 
 	"github.com/stretchr/testify/mock"
 
-	jwt "github.com/dgrijalva/jwt-go"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/stretchr/testify/suite"
@@ -83,7 +82,9 @@ func (suite *APITestSuite) TestProtected() {
 	}
 	r.Header.Set("Authorization", t)
 	// initial check token validates the token
-	auth.On("CheckToken", token, true).Return(token, &Claims{StandardClaims: jwt.StandardClaims{Id: "uid1"}}, nil).Once()
+	auth.On("CheckToken", token, true, mock.AnythingOfType("*auth.Claims")).Run(func(args mock.Arguments) {
+		args.Get(2).(*Claims).Id = "uid1"
+	}).Return(token, nil).Once()
 	auth.On("Get", "uid1", mock.AnythingOfType("*auth.User")).Run(func(a mock.Arguments) {
 		a[1].(*User).Username = "test1"
 	}).Return(nil).Once()
@@ -97,6 +98,23 @@ func (suite *APITestSuite) TestProtected() {
 		suite.FailNow("unexpected response status", "should be 200 but received %d", res.StatusCode)
 	}
 	auth.AssertExpectations(suite.T())
+}
+
+func (suite *APITestSuite) TestInterfaces() {
+	a := &DefaultManager{}
+	var login UserLoginHandler
+	var logout UserLogoutHandler
+	var reader UserReader
+	var admin UserAdmin
+	var checker TokenChecker
+	var valid TokenValidator
+	login = a
+	logout = a
+	reader = a
+	admin = a
+	checker = a
+	valid = a
+	log.Println(login, logout, reader, admin, checker, valid)
 }
 
 func (suite *APITestSuite) TestLogin() {
@@ -148,7 +166,6 @@ func (suite *APITestSuite) TestCheckToken() {
 	res, err := htc.Do(r)
 	suite.NoError(err)
 	suite.Equal(http.StatusBadRequest, res.StatusCode)
-	c := &Claims{Username: "mklimuk"}
 	req := &checkRequest{
 		Token:  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE0ODUzNDUzOTEsInVzZXJuYW1lIjoibWljaGFsIiwibmFtZSI6Ik1pY2hhbCBLbGltdWsiLCJwZXJtaXNzaW9ucyI6N30.a-Uh1Z_5m7Jy3GBJbjAZfYqC9uYaIFhM4HKnNb5fwZ4",
 		Update: true,
@@ -157,7 +174,9 @@ func (suite *APITestSuite) TestCheckToken() {
 	b, err = json.Marshal(&req)
 	suite.NoError(err)
 	// test unauthorized
-	auth.On("CheckToken", req.Token, req.Update).Return(req.Token, c, fmt.Errorf("unauthorized")).Once()
+	auth.On("CheckToken", req.Token, req.Update, mock.AnythingOfType("*auth.Claims")).Run(func(args mock.Arguments) {
+		args.Get(2).(*Claims).Username = "mklimuk"
+	}).Return(req.Token, fmt.Errorf("unauthorized")).Once()
 	r, err = http.NewRequest(http.MethodPut, fmt.Sprintf("%s%s", serv.URL, "/token/check"), bytes.NewReader(b))
 	suite.NoError(err)
 	r.Header.Set("Content-Type", "application/x.token.check+json")
@@ -170,7 +189,9 @@ func (suite *APITestSuite) TestCheckToken() {
 		}
 	}
 	// test internal error
-	auth.On("CheckToken", req.Token, req.Update).Return(req.Token, c, errors.New("dummy")).Once()
+	auth.On("CheckToken", req.Token, req.Update, mock.AnythingOfType("*auth.Claims")).Run(func(args mock.Arguments) {
+		args.Get(2).(*Claims).Username = "mklimuk"
+	}).Return(req.Token, errors.New("dummy")).Once()
 	r, err = http.NewRequest(http.MethodPut, fmt.Sprintf("%s%s", serv.URL, "/token/check"), bytes.NewReader(b))
 	suite.NoError(err)
 	r.Header.Set("Content-Type", "application/x.token.check+json")
@@ -182,7 +203,9 @@ func (suite *APITestSuite) TestCheckToken() {
 	var token string
 	token, err = BuildToken("mklimuk", "Michal", 3)
 	suite.NoError(err)
-	auth.On("CheckToken", req.Token, req.Update).Return(token, c, nil).Once()
+	auth.On("CheckToken", req.Token, req.Update, mock.AnythingOfType("*auth.Claims")).Run(func(args mock.Arguments) {
+		args.Get(2).(*Claims).Username = "mklimuk"
+	}).Return(token, nil).Once()
 	r, err = http.NewRequest(http.MethodPut, fmt.Sprintf("%s%s", serv.URL, "/token/check"), bytes.NewReader(b))
 	suite.NoError(err)
 	r.Header.Set("Content-Type", "application/x.token.check+json")
@@ -230,12 +253,9 @@ func (m *managerMock) GetAll() ([]*User, error) {
 }
 
 //CheckToken is a mocked method
-func (m *managerMock) CheckToken(token string, update bool) (string, *Claims, error) {
-	args := m.Called(token, update)
-	if args.Get(1) == nil {
-		return args.String(0), nil, args.Error(2)
-	}
-	return args.String(0), args.Get(1).(*Claims), args.Error(2)
+func (m *managerMock) CheckToken(token string, update bool, c *Claims) (string, error) {
+	args := m.Called(token, update, c)
+	return args.String(0), args.Error(1)
 }
 
 func (m *managerMock) ValidToken(token string) bool {
