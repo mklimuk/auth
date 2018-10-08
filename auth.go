@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
-	"os"
 	"sync"
 	"time"
 
@@ -17,7 +16,7 @@ import (
 	yaml "gopkg.in/yaml.v2"
 )
 
-var secret []byte
+//var secret []byte
 
 var entropy *rand.Rand
 
@@ -27,7 +26,6 @@ var claimsPool *sync.Pool
 func init() {
 	t := time.Unix(1000000, 0)
 	entropy = rand.New(rand.NewSource(t.UnixNano()))
-	secret = []byte(os.Getenv("AUTH_SECRET"))
 	userPool = &sync.Pool{
 		New: func() interface{} {
 			return new(User)
@@ -117,12 +115,13 @@ type Claims struct {
 
 type DefaultManager struct {
 	store    Store
+	secret   []byte
 	tokenTTL time.Duration
 }
 
 //NewDefaultManager returns a default user manager
-func NewDefaultManager(store Store, tokenTTL time.Duration) *DefaultManager {
-	m := &DefaultManager{store, tokenTTL}
+func NewDefaultManager(store Store, secret string, tokenTTL time.Duration) *DefaultManager {
+	m := &DefaultManager{store, []byte(secret), tokenTTL}
 	return m
 }
 
@@ -143,7 +142,7 @@ func (m *DefaultManager) Login(username, password string) (string, error) {
 		log.Infof("[auth-user] unsuccessful login for %s", username)
 		return "", ErrWrongUserPass
 	}
-	return BuildToken(username, u.Name, m.tokenTTL, u.Rigths)
+	return BuildToken(username, u.Name, m.secret, m.tokenTTL, u.Rigths)
 }
 
 func (m *DefaultManager) Logout(User) error {
@@ -159,12 +158,12 @@ func (m *DefaultManager) ValidToken(token string) bool {
 }
 
 func (m *DefaultManager) CheckToken(token string, update bool, c *Claims) (string, error) {
-	err := parseToken(token, c)
+	err := parseToken(token, m.secret, c)
 	if err != nil {
 		return token, err
 	}
 	if update {
-		updated, err := BuildToken(c.Username, c.Name, m.tokenTTL, c.Permissions)
+		updated, err := BuildToken(c.Username, c.Name, m.secret, m.tokenTTL, c.Permissions)
 		if err != nil {
 			fmt.Printf("test update error: %v\n", err.Error())
 			return token, err
@@ -234,7 +233,7 @@ func (m *DefaultManager) LoadUsers(file string, fs afero.Fs) error {
 	return nil
 }
 
-func parseToken(tokenString string, c *Claims) error {
+func parseToken(tokenString string, secret []byte, c *Claims) error {
 	_, err := jwt.ParseWithClaims(tokenString, c, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, ErrBadRequest
@@ -254,7 +253,7 @@ func parseToken(tokenString string, c *Claims) error {
 }
 
 //BuildToken builds a JWT token with custom claims
-func BuildToken(username, fullName string, validity time.Duration, rights int) (string, error) {
+func BuildToken(username, fullName string, secret []byte, validity time.Duration, rights int) (string, error) {
 	ttl := time.Now().Add(validity)
 	c := newClaims()
 	defer returnClaims(c)
