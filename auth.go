@@ -116,12 +116,13 @@ type Claims struct {
 }
 
 type DefaultManager struct {
-	store Store
+	store    Store
+	tokenTTL time.Duration
 }
 
 //NewDefaultManager returns a default user manager
-func NewDefaultManager(store Store) *DefaultManager {
-	m := &DefaultManager{store: store}
+func NewDefaultManager(store Store, tokenTTL time.Duration) *DefaultManager {
+	m := &DefaultManager{store, tokenTTL}
 	return m
 }
 
@@ -142,7 +143,7 @@ func (m *DefaultManager) Login(username, password string) (string, error) {
 		log.Infof("[auth-user] unsuccessful login for %s", username)
 		return "", ErrWrongUserPass
 	}
-	return BuildToken(username, u.Name, u.Rigths)
+	return BuildToken(username, u.Name, m.tokenTTL, u.Rigths)
 }
 
 func (m *DefaultManager) Logout(User) error {
@@ -163,7 +164,7 @@ func (m *DefaultManager) CheckToken(token string, update bool, c *Claims) (strin
 		return token, err
 	}
 	if update {
-		updated, err := BuildToken(c.Username, c.Name, c.Permissions)
+		updated, err := BuildToken(c.Username, c.Name, m.tokenTTL, c.Permissions)
 		if err != nil {
 			fmt.Printf("test update error: %v\n", err.Error())
 			return token, err
@@ -253,8 +254,8 @@ func parseToken(tokenString string, c *Claims) error {
 }
 
 //BuildToken builds a JWT token with custom claims
-func BuildToken(username, fullName string, rights int) (string, error) {
-	ttl := time.Now().Add(time.Duration(30) * time.Minute)
+func BuildToken(username, fullName string, validity time.Duration, rights int) (string, error) {
+	ttl := time.Now().Add(validity)
 	c := newClaims()
 	defer returnClaims(c)
 	c.Username = username

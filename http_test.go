@@ -201,7 +201,7 @@ func (suite *APITestSuite) TestCheckToken() {
 	}
 	// happy path
 	var token string
-	token, err = BuildToken("mklimuk", "Michal", 3)
+	token, err = BuildToken("mklimuk", "Michal", 30*time.Second, 3)
 	suite.NoError(err)
 	auth.On("CheckToken", req.Token, req.Update, mock.AnythingOfType("*auth.Claims")).Run(func(args mock.Arguments) {
 		args.Get(2).(*Claims).Username = "mklimuk"

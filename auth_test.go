@@ -25,7 +25,7 @@ func (suite *ManagerTestSuite) TestCreate() {
 	a := assert.New(suite.T())
 	s := &storeMock{}
 	s.On("Save", mock.AnythingOfType("*auth.User")).Return(nil)
-	m := NewDefaultManager(s)
+	m := NewDefaultManager(s, 30*time.Second)
 	usr := &User{Username: "test", Password: "test123", Name: "test test", Rigths: 7}
 	err := m.Create(usr)
 	a.NoError(err)
@@ -39,7 +39,7 @@ func (suite *ManagerTestSuite) TestLoadUsers() {
 	}
 	s := &storeMock{}
 	s.On("Save", mock.AnythingOfTypeArgument("*auth.User")).Return(nil).Twice()
-	m := NewDefaultManager(s)
+	m := NewDefaultManager(s, 30*time.Second)
 	err = m.LoadUsers("/etc/users/conf", fs)
 	suite.NoError(err)
 	s.AssertExpectations(suite.T())
@@ -54,17 +54,17 @@ func (suite *ManagerTestSuite) TestLogin() {
 		u.Password = "$2a$10$H9Bs2caL.R1mJNeNtJs07uGUtrWXwoHwWbQtwZ0yBEvZ9jJ1o4d26"
 		u.Rigths = 7
 	}).Return(nil)
-	m := NewDefaultManager(s)
+	m := NewDefaultManager(s, 30*time.Second)
 	token, err := m.Login("michal", "test123")
 	suite.NoError(err)
 	suite.NotEmpty(token)
 }
 
 func (suite *ManagerTestSuite) TestBuildToken() {
-	a, err := BuildToken("michal", "klimuk", 7)
+	a, err := BuildToken("michal", "klimuk", 30*time.Second, 7)
 	suite.NoError(err)
 	time.Sleep(1001 * time.Millisecond)
-	b, err := BuildToken("michal", "klimuk", 7)
+	b, err := BuildToken("michal", "klimuk", 30*time.Second, 7)
 	suite.NoError(err)
 	suite.NotEqual(a, b)
 }
@@ -77,7 +77,7 @@ func (suite *ManagerTestSuite) TestDecodeToken() {
 	a := assert.New(suite.T())
 	a.Error(err)
 	a.Equal("michal", c.Username)
-	token, err = BuildToken("mklimuk", "Michal", 7)
+	token, err = BuildToken("mklimuk", "Michal", 30*time.Second, 7)
 	a.NoError(err)
 	err = parseToken(token, c)
 	a.NoError(err)
@@ -93,7 +93,7 @@ func (suite *ManagerTestSuite) TestCheckToken() {
 	t, err := m.CheckToken(token, false, c)
 	suite.Error(err)
 	suite.Equal(token, t)
-	token, err = BuildToken("mklimuk", "Michal", 7)
+	token, err = BuildToken("mklimuk", "Michal", 30*time.Second, 7)
 	suite.True(m.ValidToken(token))
 	suite.NoError(err)
 	t, err = m.CheckToken(token, false, c)
