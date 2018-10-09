@@ -148,7 +148,7 @@ func (m *DefaultManager) userPasswordLogin(u *User) (string, error) {
 		log.Infof("[auth-user] unsuccessful login for %s", u.Username)
 		return "", ErrWrongUserPass
 	}
-	return BuildToken(u.Username, u.Name, m.opts.PasswordSecret, m.opts.TokenTTL, u.Rigths)
+	return BuildToken(u.ID, u.Username, u.Name, m.opts.PasswordSecret, m.opts.TokenTTL, u.Rigths)
 }
 
 //passcodeLogin uses sha3-256 fixed hash to perform user login
@@ -160,7 +160,7 @@ func (m *DefaultManager) passcodeLogin(u *User) (string, error) {
 		return "", err
 	}
 	// if the user was found we simply return the token
-	return BuildToken(u.Username, u.Name, m.opts.PasswordSecret, m.opts.TokenTTL, u.Rigths)
+	return BuildToken(u.ID, u.Username, u.Name, m.opts.PasswordSecret, m.opts.TokenTTL, u.Rigths)
 }
 
 func (m *DefaultManager) Logout(User) error {
@@ -181,7 +181,7 @@ func (m *DefaultManager) CheckToken(token string, update bool, c *Claims) (strin
 		return token, err
 	}
 	if update {
-		updated, err := BuildToken(c.Username, c.Name, m.opts.PasswordSecret, m.opts.TokenTTL, c.Permissions)
+		updated, err := BuildToken(c.Id, c.Username, c.Name, m.opts.PasswordSecret, m.opts.TokenTTL, c.Permissions)
 		if err != nil {
 			return token, err
 		}
@@ -243,13 +243,13 @@ func (m *DefaultManager) LoadUsers(file string, fs afero.Fs) error {
 	for _, u := range users {
 		ID, err := ulid.New(ulid.Timestamp(time.Now()), entropy)
 		if err != nil {
-			log.Errorf("[auth-user] error creating user %s: %s", u.Username, err.Error())
+			log.Errorf("[auth-user] error creating user %s: %v", u.Username, err)
 			continue
 		}
 		u.ID = ID.String()
 		err = m.store.Save(u)
 		if err != nil {
-			log.Errorf("[auth-user] error creating user %s: %s", u.Username, err.Error())
+			log.Errorf("[auth-user] error creating user %s: %v", u.Username, err)
 			continue
 		}
 		count++
@@ -279,10 +279,11 @@ func parseToken(tokenString string, secret []byte, c *Claims) error {
 }
 
 //BuildToken builds a JWT token with custom claims
-func BuildToken(username, fullName string, secret []byte, validity time.Duration, rights int) (string, error) {
+func BuildToken(id, username, fullName string, secret []byte, validity time.Duration, rights int) (string, error) {
 	ttl := time.Now().Add(validity)
 	c := newClaims()
 	defer returnClaims(c)
+	c.Id = id
 	c.Username = username
 	c.Name = fullName
 	c.Permissions = rights

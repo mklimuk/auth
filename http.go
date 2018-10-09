@@ -70,15 +70,15 @@ func AuthMiddleware(auth UserTokenChecker) func(http.Handler) http.Handler {
 			defer returnClaims(cs)
 			token, err := auth.CheckToken(token, true, cs)
 			if err != nil {
-				log.Infof("[auth_api] authorization error: %s", err.Error())
-				renderErrorJSON(w, http.StatusUnauthorized, fmt.Sprintf("unauthorized: %s", err.Error()))
+				log.Infof("[auth_api] authorization error: %v", err)
+				renderErrorJSON(w, http.StatusUnauthorized, fmt.Sprintf("unauthorized: %v", err))
 				return
 			}
 			u := newUser()
 			defer releaseUser(u)
 			err = auth.Get(cs.Id, u)
 			if err != nil {
-				msg := fmt.Sprintf("[auth_api] error getting user: %s", err.Error())
+				msg := fmt.Sprintf("[auth_api] error getting user: %v", err)
 				log.Errorf(msg)
 				renderErrorJSON(w, http.StatusInternalServerError, msg)
 				return
@@ -97,7 +97,7 @@ func LogoutHandler(auth UserLogoutHandler) http.HandlerFunc {
 		u := Get(r.Context())
 		err := auth.Logout(u)
 		if err != nil {
-			msg := fmt.Sprintf("[auth_api] unexpected error during user '%s' logout: %s", u.Username, err.Error())
+			msg := fmt.Sprintf("[auth_api] unexpected error during user '%s' logout: %v", u.Username, err)
 			log.Error(msg)
 			renderErrorJSON(w, http.StatusInternalServerError, msg)
 			return
@@ -126,7 +126,7 @@ func LoginHandler(auth UserLoginHandler) http.HandlerFunc {
 				renderErrorJSON(w, http.StatusUnauthorized, "wrong username or password")
 				return
 			}
-			msg := fmt.Sprintf("[auth_api] unexpected error during user '%s' signin: %s", usr.Username, err.Error())
+			msg := fmt.Sprintf("[auth_api] unexpected error during user '%s' signin: %v", usr.Username, err)
 			log.Error(msg)
 			renderErrorJSON(w, http.StatusInternalServerError, msg)
 			return
@@ -144,7 +144,7 @@ func GetAllHandler(auth UserAdmin) http.HandlerFunc {
 		}
 		users, err := auth.GetAll()
 		if err != nil {
-			msg := fmt.Sprintf("[auth_api] error getting list of users: %s", err.Error())
+			msg := fmt.Sprintf("[auth_api] error getting list of users: %v", err)
 			log.Errorf(msg)
 			renderErrorJSON(w, http.StatusInternalServerError, msg)
 			return
@@ -177,7 +177,7 @@ func CreateUserHandler(auth UserAdmin) http.HandlerFunc {
 				renderErrorJSON(w, http.StatusConflict, "user already exists")
 				return
 			}
-			msg := fmt.Sprintf("[auth_api] unexpected error during user creation: %s", err.Error())
+			msg := fmt.Sprintf("[auth_api] unexpected error during user creation: %v", err)
 			log.Errorf(msg)
 			renderErrorJSON(w, http.StatusInternalServerError, msg)
 			return
@@ -199,7 +199,7 @@ func CheckTokenHandler(auth TokenChecker) http.HandlerFunc {
 		defer returnClaims(cs)
 		token, err := auth.CheckToken(req.Token, req.Update, cs)
 		if err != nil {
-			renderErrorJSON(w, http.StatusUnauthorized, fmt.Sprintf("error checking token: %s", err.Error()))
+			renderErrorJSON(w, http.StatusUnauthorized, fmt.Sprintf("error checking token: %v", err))
 			return
 		}
 		renderJSON(w, struct {

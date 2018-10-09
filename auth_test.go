@@ -79,10 +79,10 @@ func (suite *ManagerTestSuite) TestLogin() {
 }
 
 func (suite *ManagerTestSuite) TestBuildToken() {
-	a, err := BuildToken("michal", "klimuk", []byte("m!ch4l_"), 30*time.Second, 7)
+	a, err := BuildToken("u1", "michal", "klimuk", []byte("m!ch4l_"), 30*time.Second, 7)
 	suite.NoError(err)
 	time.Sleep(1001 * time.Millisecond)
-	b, err := BuildToken("michal", "klimuk", []byte("m!ch4l_"), 30*time.Second, 7)
+	b, err := BuildToken("u1", "michal", "klimuk", []byte("m!ch4l_"), 30*time.Second, 7)
 	suite.NoError(err)
 	suite.NotEqual(a, b)
 }
@@ -95,7 +95,7 @@ func (suite *ManagerTestSuite) TestDecodeToken() {
 	a := assert.New(suite.T())
 	a.Error(err)
 	a.Equal("michal", c.Username)
-	token, err = BuildToken("mklimuk", "Michal", []byte("m!ch4l_"), 30*time.Second, 7)
+	token, err = BuildToken("u1", "mklimuk", "Michal", []byte("m!ch4l_"), 30*time.Second, 7)
 	a.NoError(err)
 	err = parseToken(token, []byte("m!ch4l_"), c)
 	a.NoError(err)
@@ -111,12 +111,13 @@ func (suite *ManagerTestSuite) TestCheckToken() {
 	t, err := m.CheckToken(token, false, c)
 	suite.Error(err)
 	suite.Equal(token, t)
-	token, err = BuildToken("mklimuk", "Michal", []byte("m!ch4l_"), 30*time.Second, 7)
+	token, err = BuildToken("u1", "mklimuk", "Michal", []byte("m!ch4l_"), 30*time.Second, 7)
 	suite.True(m.ValidToken(token))
 	suite.NoError(err)
 	t, err = m.CheckToken(token, false, c)
 	suite.NoError(err)
 	suite.Equal("mklimuk", c.Username)
+	suite.Equal("u1", c.Id)
 	suite.Equal(token, t)
 	t, err = m.CheckToken(token, true, c)
 	suite.NoError(err)
