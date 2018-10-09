@@ -14,7 +14,7 @@ import (
 
 //Manager is an access layer for user-related operations
 type UserLoginHandler interface {
-	Login(username, password string) (string, error)
+	Login(*User) (string, error)
 }
 
 type UserLogoutHandler interface {
@@ -75,7 +75,7 @@ func AuthMiddleware(auth UserTokenChecker) func(http.Handler) http.Handler {
 				return
 			}
 			u := newUser()
-			defer returnUser(u)
+			defer releaseUser(u)
 			err = auth.Get(cs.Id, u)
 			if err != nil {
 				msg := fmt.Sprintf("[auth_api] error getting user: %s", err.Error())
@@ -107,14 +107,15 @@ func LogoutHandler(auth UserLogoutHandler) http.HandlerFunc {
 
 func LoginHandler(auth UserLoginHandler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		usr := new(User)
+		usr := newUser()
+		defer releaseUser(usr)
 		defer r.Body.Close()
 		err := decodeJSON(r.Body, usr)
 		if err != nil {
 			renderErrorJSON(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		token, err := auth.Login(usr.Username, usr.Password)
+		token, err := auth.Login(usr)
 		if err != nil {
 			cause := errors.Cause(err)
 			if cause == ErrBadRequest {

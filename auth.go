@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"math/rand"
 	"sync"
@@ -13,6 +14,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"golang.org/x/crypto/bcrypt"
+	"golang.org/x/crypto/sha3"
 	yaml "gopkg.in/yaml.v2"
 )
 
@@ -44,12 +46,8 @@ func newUser() *User {
 	return userPool.New().(*User)
 }
 
-func returnUser(u *User) {
-	u.ID = empty
-	u.Name = empty
-	u.Password = empty
-	u.Username = empty
-	u.Rigths = 0
+func releaseUser(u *User) {
+	*u = User{}
 	userPool.Put(u)
 }
 
@@ -58,10 +56,7 @@ func newClaims() *Claims {
 }
 
 func returnClaims(c *Claims) {
-	c.Username = empty
-	c.Name = empty
-	c.Permissions = 0
-	c.ExpiresAt = 0
+	*c = Claims{}
 	claimsPool.Put(c)
 }
 
@@ -98,10 +93,11 @@ func Get(c context.Context) User {
 
 //User contains user properties
 type User struct {
-	ID       string `json:"id" yaml:"id" storm:"unique"`
+	ID       string `json:"id" yaml:"id,omitempty" storm:"unique"`
 	Username string `json:"username" yaml:"username" storm:"unique"`
 	Name     string `json:"name" yaml:"name"`
-	Password string `json:"password" yaml:"password"`
+	Password string `json:"password,omitempty" yaml:"password,omitempty"`
+	Passcode string `json:"passcode,omitempty" yaml:"passcode,omitempty"`
 	Rigths   int    `json:"rights" yaml:"rights"`
 }
 
@@ -113,36 +109,58 @@ type Claims struct {
 	Permissions int    `json:"permissions"`
 }
 
+type Opts struct {
+	TokenTTL           time.Duration
+	PasswordSecret     []byte
+	AllowPasscodeLogin bool
+}
+
 type DefaultManager struct {
-	store    Store
-	secret   []byte
-	tokenTTL time.Duration
+	store Store
+	opts  Opts
 }
 
 //NewDefaultManager returns a default user manager
-func NewDefaultManager(store Store, secret string, tokenTTL time.Duration) *DefaultManager {
-	m := &DefaultManager{store, []byte(secret), tokenTTL}
+func NewDefaultManager(store Store, opts Opts) *DefaultManager {
+	m := &DefaultManager{store, opts}
 	return m
 }
 
-func (m *DefaultManager) Login(username, password string) (string, error) {
-	log.Infof("[auth-user] signin request from user %s", username)
-	u := newUser()
-	defer returnUser(u)
-	err := m.store.ByUsername(username, u)
+func (m *DefaultManager) Login(u *User) (string, error) {
+	if u.Username == "" {
+		if m.opts.AllowPasscodeLogin && u.Passcode != "" {
+			return m.passcodeLogin(u)
+		}
+		return "", ErrWrongUserPass
+	}
+	return m.userPasswordLogin(u)
+}
+
+func (m *DefaultManager) userPasswordLogin(u *User) (string, error) {
+	log.Infof("[auth-user] signin request from user %s", u.Username)
+	pass := u.Password
+	err := m.store.ByUsername(u.Username, u)
 	if err != nil {
 		return "", err
 	}
-	if u == nil {
-		log.Infof("[auth-user] user %s not found in store", username)
-		return "", ErrNotFound
-	}
-	err = bcrypt.CompareHashAndPassword([]byte(u.Password), []byte(password))
+	err = bcrypt.CompareHashAndPassword([]byte(u.Password), []byte(pass))
 	if err != nil {
-		log.Infof("[auth-user] unsuccessful login for %s", username)
+		log.Infof("[auth-user] unsuccessful login for %s", u.Username)
 		return "", ErrWrongUserPass
 	}
-	return BuildToken(username, u.Name, m.secret, m.tokenTTL, u.Rigths)
+	return BuildToken(u.Username, u.Name, m.opts.PasswordSecret, m.opts.TokenTTL, u.Rigths)
+}
+
+//passcodeLogin uses sha3-256 fixed hash to perform user login
+func (m *DefaultManager) passcodeLogin(u *User) (string, error) {
+	pwddata := sha3.Sum256([]byte(u.Passcode))
+	pwd := hex.EncodeToString(pwddata[:])
+	err := m.store.ByPasscode(pwd, u)
+	if err != nil {
+		return "", err
+	}
+	// if the user was found we simply return the token
+	return BuildToken(u.Username, u.Name, m.opts.PasswordSecret, m.opts.TokenTTL, u.Rigths)
 }
 
 func (m *DefaultManager) Logout(User) error {
@@ -158,14 +176,13 @@ func (m *DefaultManager) ValidToken(token string) bool {
 }
 
 func (m *DefaultManager) CheckToken(token string, update bool, c *Claims) (string, error) {
-	err := parseToken(token, m.secret, c)
+	err := parseToken(token, m.opts.PasswordSecret, c)
 	if err != nil {
 		return token, err
 	}
 	if update {
-		updated, err := BuildToken(c.Username, c.Name, m.secret, m.tokenTTL, c.Permissions)
+		updated, err := BuildToken(c.Username, c.Name, m.opts.PasswordSecret, m.opts.TokenTTL, c.Permissions)
 		if err != nil {
-			fmt.Printf("test update error: %v\n", err.Error())
 			return token, err
 		}
 		return updated, nil
@@ -174,16 +191,25 @@ func (m *DefaultManager) CheckToken(token string, update bool, c *Claims) (strin
 }
 
 func (m *DefaultManager) Create(u *User) error {
-	ID, err := ulid.New(ulid.Timestamp(time.Now()), entropy)
-	if err != nil {
-		return err
+	if u.Passcode == "" && u.Password == "" {
+		return ErrBadRequest
 	}
-	u.ID = ID.String()
-	pwd, err := bcrypt.GenerateFromPassword([]byte(u.Password), 10)
-	if err != nil {
-		return err
+	if u.Password != "" {
+		ID, err := ulid.New(ulid.Timestamp(time.Now()), entropy)
+		if err != nil {
+			return err
+		}
+		u.ID = ID.String()
+		pwd, err := bcrypt.GenerateFromPassword([]byte(u.Password), 10)
+		if err != nil {
+			return err
+		}
+		u.Password = string(pwd)
 	}
-	u.Password = string(pwd)
+	if u.Passcode != "" {
+		pwddata := sha3.Sum256([]byte(u.Passcode))
+		u.Passcode = hex.EncodeToString(pwddata[:])
+	}
 	if m.store == nil {
 		return nil
 	}

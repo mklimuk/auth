@@ -54,7 +54,7 @@ func (suite *APITestSuite) TestProtected() {
 	}
 	req := &User{Username: "test1", Password: "pass"}
 	b, err := json.Marshal(&req)
-	auth.On("Login", "test1", "pass").Return("abcd", nil).Once()
+	auth.On("Login", mock.AnythingOfType("*auth.User")).Return("abcd", nil).Once()
 	htc := &http.Client{Timeout: 100 * time.Millisecond}
 	r, err := http.NewRequest(http.MethodPost, fmt.Sprintf("%s%s", serv.URL, "/login"), bytes.NewReader(b))
 	if !suite.NoError(err) {
@@ -130,7 +130,7 @@ func (suite *APITestSuite) TestLogin() {
 	b, err := json.Marshal(&req)
 	suite.NoError(err)
 	// test unauthorized
-	auth.On("Login", "test1", "pass").Return("", ErrWrongUserPass).Once()
+	auth.On("Login", mock.AnythingOfType("*auth.User")).Return("", ErrWrongUserPass).Once()
 	res, err = http.Post(fmt.Sprintf("%s%s", serv.URL, "/login"), "application/x.login.req+json", bytes.NewReader(b))
 	if suite.NoError(err) {
 		if !suite.Equal(http.StatusUnauthorized, res.StatusCode) {
@@ -140,12 +140,12 @@ func (suite *APITestSuite) TestLogin() {
 		}
 	}
 	// test internal error
-	auth.On("Login", "test1", "pass").Return("", errors.New("generic error")).Once()
+	auth.On("Login", mock.AnythingOfType("*auth.User")).Return("", errors.New("generic error")).Once()
 	res, err = http.Post(fmt.Sprintf("%s%s", serv.URL, "/login"), "application/x.login.req+json", bytes.NewReader(b))
 	suite.NoError(err)
 	suite.Equal(http.StatusInternalServerError, res.StatusCode)
 	// happy path
-	auth.On("Login", "test1", "pass").Return("abcd", nil).Once()
+	auth.On("Login", mock.AnythingOfType("*auth.User")).Return("abcd", nil).Once()
 	res, err = http.Post(fmt.Sprintf("%s%s", serv.URL, "/login"), "application/x.login.req+json", bytes.NewReader(b))
 	suite.NoError(err)
 	suite.Equal(http.StatusOK, res.StatusCode)
@@ -223,8 +223,8 @@ type managerMock struct {
 }
 
 //Login is a mocked method
-func (m *managerMock) Login(username, password string) (string, error) {
-	args := m.Called(username, password)
+func (m *managerMock) Login(u *User) (string, error) {
+	args := m.Called(u)
 	return args.String(0), args.Error(1)
 }
 

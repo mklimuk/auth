@@ -24,7 +24,7 @@ func (suite *ManagerTestSuite) TestCreate() {
 	a := assert.New(suite.T())
 	s := &storeMock{}
 	s.On("Save", mock.AnythingOfType("*auth.User")).Return(nil)
-	m := NewDefaultManager(s, "m!ch4l_", 30*time.Second)
+	m := NewDefaultManager(s, Opts{PasswordSecret: []byte("m!ch4l_"), TokenTTL: 30 * time.Second})
 	usr := &User{Username: "test", Password: "test123", Name: "test test", Rigths: 7}
 	err := m.Create(usr)
 	a.NoError(err)
@@ -38,7 +38,7 @@ func (suite *ManagerTestSuite) TestLoadUsers() {
 	}
 	s := &storeMock{}
 	s.On("Save", mock.AnythingOfTypeArgument("*auth.User")).Return(nil).Twice()
-	m := NewDefaultManager(s, "m!ch4l_", 30*time.Second)
+	m := NewDefaultManager(s, Opts{PasswordSecret: []byte("m!ch4l_"), TokenTTL: 30 * time.Second})
 	err = m.LoadUsers("/etc/users/conf", fs)
 	suite.NoError(err)
 	s.AssertExpectations(suite.T())
@@ -53,10 +53,29 @@ func (suite *ManagerTestSuite) TestLogin() {
 		u.Password = "$2a$10$H9Bs2caL.R1mJNeNtJs07uGUtrWXwoHwWbQtwZ0yBEvZ9jJ1o4d26"
 		u.Rigths = 7
 	}).Return(nil)
-	m := NewDefaultManager(s, "m!ch4l_", 30*time.Second)
-	token, err := m.Login("michal", "test123")
+	m := NewDefaultManager(s, Opts{TokenTTL: 30 * time.Second, PasswordSecret: []byte("m!ch4l_"), AllowPasscodeLogin: false})
+	token, err := m.Login(&User{Username: "michal", Password: "test123"})
 	suite.NoError(err)
 	suite.NotEmpty(token)
+	// passcode login
+	s.On("ByUsername", "", mock.AnythingOfType("*auth.User")).Return(ErrNotFound).Once()
+	token, err = m.Login(&User{Username: "", Password: "test123"})
+	suite.Equal(ErrWrongUserPass, err)
+	suite.Empty(token)
+	m.opts.AllowPasscodeLogin = true
+	s.On("ByPasscode", "3054762b0a8b31adfe79efb3bc7718624627cc99c7c8f39bfa591ce6854ac05d", mock.AnythingOfType("*auth.User")).Run(func(a mock.Arguments) {
+		u := a[1].(*User)
+		u.Username = "michal"
+		u.Name = "Michal Klimuk"
+		u.Password = "$2a$10$H9Bs2caL.R1mJNeNtJs07uGUtrWXwoHwWbQtwZ0yBEvZ9jJ1o4d26"
+		u.Passcode = "3054762b0a8b31adfe79efb3bc7718624627cc99c7c8f39bfa591ce6854ac05d"
+		u.Rigths = 7
+	}).Return(nil).Once()
+	usr := &User{Username: "", Passcode: "test123"}
+	token, err = m.Login(usr)
+	suite.NoError(err)
+	suite.NotEmpty(token)
+	suite.Equal("michal", usr.Username)
 }
 
 func (suite *ManagerTestSuite) TestBuildToken() {
@@ -87,7 +106,7 @@ func (suite *ManagerTestSuite) TestCheckToken() {
 	token := "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE0ODUzNDUzOTEsInVzZXJuYW1lIjoibWljaGFsIiwibmFtZSI6Ik1pY2hhbCBLbGltdWsiLCJwZXJtaXNzaW9ucyI6N30.a-Uh1Z_5m7Jy3GBJbjAZfYqC9uYaIFhM4HKnNb5fwZ4"
 	c := newClaims()
 	defer returnClaims(c)
-	m := DefaultManager{secret: []byte("m!ch4l_")}
+	m := DefaultManager{opts: Opts{PasswordSecret: []byte("m!ch4l_")}}
 	suite.False(m.ValidToken(token))
 	t, err := m.CheckToken(token, false, c)
 	suite.Error(err)
@@ -136,6 +155,11 @@ func (m *storeMock) Get(ID string, u *User) error {
 }
 func (m *storeMock) ByUsername(username string, u *User) error {
 	args := m.Called(username, u)
+	return args.Error(0)
+}
+
+func (m *storeMock) ByPasscode(pass string, u *User) error {
+	args := m.Called(pass, u)
 	return args.Error(0)
 }
 

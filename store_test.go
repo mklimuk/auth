@@ -35,7 +35,7 @@ func (suite *StoreTestSuite) TestCreate() {
 	err = s.store.Save(u)
 	suite.NoError(err)
 	usr := newUser()
-	defer returnUser(usr)
+	defer releaseUser(usr)
 	err = s.store.ByUsername("user1", usr)
 	suite.NoError(err)
 	if suite.NotNil(usr) {
