@@ -1,2 +1,1 @@
-# Husar generator
-Voice announcements generator.
+# Authentication HTTP helpers using JWT
