@@ -95,13 +95,19 @@ func AuthMiddleware(auth UserTokenChecker) func(http.Handler) http.Handler {
 func LogoutHandler(auth UserLogoutHandler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		u := Get(r.Context())
-		err := auth.Logout(u)
+		if u == nil {
+			// we consider the user to be already logged out
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		err := auth.Logout(*u)
 		if err != nil {
 			msg := fmt.Sprintf("[auth_api] unexpected error during user '%s' logout: %v", u.Username, err)
 			log.Error(msg)
 			renderErrorJSON(w, http.StatusInternalServerError, msg)
 			return
 		}
+		w.WriteHeader(http.StatusOK)
 	}
 }
 

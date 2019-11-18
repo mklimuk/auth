@@ -83,12 +83,12 @@ func Wrap(ctx context.Context, user *User, cs *Claims) context.Context {
 	return context.WithValue(ctx, ctxUser, &userContext{Claims: cs, User: user})
 }
 
-func Get(c context.Context) User {
+func Get(c context.Context) *User {
 	u := c.Value(ctxUser)
 	if u == nil {
-		panic("[auth] misuse of Get method; no user in context")
+		return nil
 	}
-	return *u.(*userContext).User
+	return u.(*userContext).User
 }
 
 //User contains user properties
