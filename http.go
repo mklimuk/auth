@@ -61,7 +61,10 @@ func parseHeader(r *http.Request, header string) string {
 func AuthMiddleware(auth UserTokenChecker) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		fn := func(w http.ResponseWriter, r *http.Request) {
-			token := parseHeader(r, "Authorization")
+			token := strings.TrimPrefix(r.URL.Query().Get("token"), "Bearer ")
+			if token == "" {
+				token = parseHeader(r, "Authorization")
+			}
 			if token == "" {
 				renderErrorJSON(w, http.StatusUnauthorized, "authorization bearer token not present")
 				return
