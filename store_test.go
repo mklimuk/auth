@@ -5,52 +5,40 @@ import (
 	"os"
 	"testing"
 
-	log "github.com/sirupsen/logrus"
-	"github.com/stretchr/testify/suite"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-type StoreTestSuite struct {
-	suite.Suite
-}
-
-func (suite *StoreTestSuite) SetupSuite() {
-	log.SetLevel(log.DebugLevel)
-}
-
-func (suite *StoreTestSuite) TestCreate() {
+func TestCreate(t *testing.T) {
 	s, err := NewStoreWrapper()
-	suite.NoError(err)
-	u := &User{
+	require.NoError(t, err)
+	u := User{
 		ID:       "uid1",
 		Username: "user1",
 		Password: "pass",
 	}
-	err = s.store.Save(u)
-	suite.NoError(err)
-	u = &User{
+	err = s.store.SaveUser(u)
+	assert.NoError(t, err)
+	u = User{
 		ID:       "uid2",
 		Username: "user2",
 		Password: "pass",
 	}
-	err = s.store.Save(u)
-	suite.NoError(err)
+	err = s.store.SaveUser(u)
+	assert.NoError(t, err)
 	usr := newUser()
-	defer releaseUser(usr)
-	err = s.store.ByUsername("user1", usr)
-	suite.NoError(err)
-	if suite.NotNil(usr) {
-		suite.Equal("uid1", usr.ID)
+	defer returnUser(usr)
+	err = s.store.GetUserByUsername("user1", usr)
+	require.NoError(t, err)
+	if assert.NotNil(t, usr) {
+		assert.Equal(t, "uid1", usr.ID)
 	}
-	users, err := s.store.All(0, 10)
-	suite.NoError(err)
-	if suite.NotNil(users) {
-		suite.Len(users, 2)
+	users, err := s.store.AllUsers(0, 10)
+	require.NoError(t, err)
+	if assert.NotNil(t, users) {
+		assert.Len(t, users, 2)
 	}
 
-}
-
-func TestStoreTestSuite(t *testing.T) {
-	suite.Run(t, new(StoreTestSuite))
 }
 
 type StoreWrapper struct {

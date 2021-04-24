@@ -49,20 +49,20 @@ func generateWithPasscode(args []string) (*auth.User, error) {
 		fmt.Printf(helpPasscode, l)
 		return nil, errBadRequest
 	}
-	u := auth.NewDefaultManager(auth.NewNoopStore(), auth.Opts{})
-	rights, err := strconv.Atoi(args[3])
+	u := auth.New(nil, auth.Opts{})
+	scope, err := strconv.Atoi(args[3])
 	if err != nil {
-		fmt.Printf("[ERROR] could not parse user rights (must be an integer): %v\n", err)
+		fmt.Printf("[ERROR] could not parse scope (must be an integer): %v\n", err)
 		return nil, err
 	}
-	user := &auth.User{
+	user := auth.User{
 		Username: args[0],
 		Passcode: args[1],
 		Name:     args[2],
-		Rigths:   rights,
+		Scope:    auth.Scope(scope),
 	}
-	err = u.Create(user)
-	return user, err
+	err = u.CreateUser(user)
+	return &user, err
 }
 
 func generateWithPassword(args []string) (*auth.User, error) {
@@ -71,20 +71,20 @@ func generateWithPassword(args []string) (*auth.User, error) {
 		fmt.Printf(helpPassword, l)
 		return nil, errBadRequest
 	}
-	u := auth.NewDefaultManager(auth.NewNoopStore(), auth.Opts{PasswordSecret: []byte(args[4])})
-	rights, err := strconv.Atoi(args[3])
+	u := auth.New(nil, auth.Opts{PasswordSecret: []byte(args[4])})
+	scope, err := strconv.Atoi(args[3])
 	if err != nil {
-		fmt.Printf("[ERROR] could not parse user rights (must be an integer): %v\n", err)
+		fmt.Printf("[ERROR] could not parse scope (must be an integer): %v\n", err)
 		return nil, err
 	}
-	user := &auth.User{
+	user := auth.User{
 		Username: args[0],
 		Password: args[1],
 		Name:     args[2],
-		Rigths:   rights,
+		Scope:    auth.Scope(scope),
 	}
-	err = u.Create(user)
-	return user, err
+	err = u.CreateUser(user)
+	return &user, err
 }
 
 const helpPassword = `

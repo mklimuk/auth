@@ -1,23 +1,14 @@
 package auth
 
 import (
+	"fmt"
+
 	"github.com/asdine/storm"
 	cgob "github.com/asdine/storm/codec/gob"
 )
 
-const (
-	StoreBolt = "bolt"
-	StoreDir  = "dir"
-)
-
-type Store interface {
-	Save(*User) error
-	Get(string, *User) error
-	ByUsername(string, *User) error
-	ByPasscode(string, *User) error
-	Delete(string) error
-	All(page, pageSize int) ([]*User, error)
-}
+var _ UserStore = &BoltStore{}
+var _ UserTokenStore = &BoltStore{}
 
 type BoltStore struct {
 	path string
@@ -33,18 +24,34 @@ func NewBoltStore(path string) (*BoltStore, error) {
 	if err != nil {
 		return s, err
 	}
-	return s, s.db.Init(new(User))
+	err = s.db.Init(&User{})
+	if err != nil {
+		return s, fmt.Errorf("could not init user: %w", err)
+	}
+	err = s.db.Init(&Token{})
+	if err != nil {
+		return s, fmt.Errorf("could not init user: %w", err)
+	}
+	return s, nil
 }
 
-func (s *BoltStore) Save(u *User) error {
-	err := s.db.Save(u)
+func (s *BoltStore) SaveUser(u User) error {
+	err := s.db.Save(&u)
 	if err == storm.ErrAlreadyExists {
 		return ErrExists
 	}
 	return err
 }
 
-func (s *BoltStore) Get(ID string, u *User) error {
+func (s *BoltStore) SaveToken(t Token) error {
+	err := s.db.Save(&t)
+	if err == storm.ErrAlreadyExists {
+		return ErrExists
+	}
+	return err
+}
+
+func (s *BoltStore) GetUser(ID string, u *User) error {
 	err := s.db.One("ID", ID, u)
 	if err == storm.ErrNotFound {
 		return ErrNotFound
@@ -52,7 +59,7 @@ func (s *BoltStore) Get(ID string, u *User) error {
 	return err
 }
 
-func (s *BoltStore) ByUsername(username string, u *User) error {
+func (s *BoltStore) GetUserByUsername(username string, u *User) error {
 	err := s.db.One("Username", username, u)
 	if err == storm.ErrNotFound {
 		return ErrNotFound
@@ -60,7 +67,15 @@ func (s *BoltStore) ByUsername(username string, u *User) error {
 	return err
 }
 
-func (s *BoltStore) ByPasscode(pass string, u *User) error {
+func (s *BoltStore) GetUserToken(value string, t *Token) error {
+	err := s.db.One("Token", value, t)
+	if err == storm.ErrNotFound {
+		return ErrNotFound
+	}
+	return err
+}
+
+func (s *BoltStore) GetUserByPasscode(pass string, u *User) error {
 	err := s.db.One("Passcode", pass, u)
 	if err == storm.ErrNotFound {
 		return ErrNotFound
@@ -68,10 +83,10 @@ func (s *BoltStore) ByPasscode(pass string, u *User) error {
 	return err
 }
 
-func (s *BoltStore) Delete(ID string) error {
+func (s *BoltStore) DeleteUser(ID string) error {
 	usr := newUser()
-	defer releaseUser(usr)
-	err := s.Get(ID, usr)
+	defer returnUser(usr)
+	err := s.GetUser(ID, usr)
 	if err != nil {
 		return err
 	}
@@ -81,42 +96,11 @@ func (s *BoltStore) Delete(ID string) error {
 	return s.db.DeleteStruct(usr)
 }
 
-func (s *BoltStore) All(page, pageSize int) ([]*User, error) {
+func (s *BoltStore) AllUsers(page, pageSize int) ([]*User, error) {
 	var res []*User
 	err := s.db.All(&res, storm.Skip(page*pageSize), storm.Limit(pageSize))
 	if err == storm.ErrNotFound {
 		return nil, nil
 	}
 	return res, err
-}
-
-type NoopStore struct {
-}
-
-func NewNoopStore() *NoopStore {
-	return &NoopStore{}
-}
-
-func (s *NoopStore) Save(*User) error {
-	return nil
-}
-
-func (s *NoopStore) Get(string, *User) error {
-	return nil
-}
-
-func (s *NoopStore) ByUsername(string, *User) error {
-	return nil
-}
-
-func (s *NoopStore) ByPasscode(string, *User) error {
-	return nil
-}
-
-func (s *NoopStore) Delete(string) error {
-	return nil
-}
-
-func (s *NoopStore) All(page, pageSize int) ([]*User, error) {
-	return nil, nil
 }

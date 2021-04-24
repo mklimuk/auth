@@ -2,17 +2,16 @@ package auth
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
-	"io/ioutil"
 	"net/http"
+	"strconv"
 	"strings"
 
-	"github.com/pkg/errors"
-	log "github.com/sirupsen/logrus"
+	validation "github.com/go-ozzo/ozzo-validation/v4"
 )
 
-//Manager is an access layer for user-related operations
+//UserLoginHandler is an access layer for user-related operations
 type UserLoginHandler interface {
 	Login(*User) (string, error)
 }
@@ -22,35 +21,37 @@ type UserLogoutHandler interface {
 }
 
 type UserReader interface {
-	Get(string, *User) error
+	GetUser(string, *User) error
+	GetAllUsers() ([]*User, error)
 }
 
-type UserAdmin interface {
-	Create(*User) error
-	GetAll() ([]*User, error)
+type UserWriter interface {
+	CreateUser(User) error
 }
 
-type TokenChecker interface {
-	CheckToken(string, bool, *Claims) (string, error)
-}
-
-type UserTokenChecker interface {
+type UserReadWriter interface {
 	UserReader
-	TokenChecker
+	UserWriter
 }
 
 type TokenValidator interface {
-	ValidToken(token string) bool
+	ValidateToken(token string, user *User, claims *Claims, scope Scope, update bool) (string, error)
 }
 
-const adminRights = 7
-
-type checkRequest struct {
-	Token  string `json:"token"`
-	Update bool   `json:"update"`
+// Err is a json error wrapper
+type Err struct {
+	Error string `json:"error"`
 }
 
-func parseHeader(r *http.Request, header string) string {
+func jsonErr(msg string) Err {
+	return Err{Error: msg}
+}
+
+func jsonErrf(msg string, args ...interface{}) Err {
+	return Err{Error: fmt.Sprintf(msg, args...)}
+}
+
+func parseAuthorizationHeader(r *http.Request) string {
 	h := r.Header.Get("Authorization")
 	if !strings.HasPrefix(h, "Bearer ") {
 		return ""
@@ -58,38 +59,38 @@ func parseHeader(r *http.Request, header string) string {
 	return strings.TrimPrefix(h, "Bearer ")
 }
 
-func AuthMiddleware(auth UserTokenChecker) func(http.Handler) http.Handler {
+func Middleware(validator TokenValidator) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		fn := func(w http.ResponseWriter, r *http.Request) {
 			token := strings.TrimPrefix(r.URL.Query().Get("token"), "Bearer ")
 			if token == "" {
-				token = parseHeader(r, "Authorization")
+				token = parseAuthorizationHeader(r)
 			}
 			if token == "" {
-				renderErrorJSON(w, http.StatusUnauthorized, "authorization bearer token not present")
+				renderJSON(w, http.StatusUnauthorized, jsonErr("authorization bearer token not present"))
 				return
 			}
-			cs := newClaims()
-			defer returnClaims(cs)
-			token, err := auth.CheckToken(token, true, cs)
+			s := r.Header.Get("X-Auth-Scope")
+			if s == "" {
+				renderJSON(w, http.StatusUnauthorized, jsonErr("missing authentication scope"))
+				return
+			}
+			scope, err := strconv.Atoi(s)
 			if err != nil {
-				log.Infof("[auth_api] authorization error: %v", err)
-				renderErrorJSON(w, http.StatusUnauthorized, fmt.Sprintf("unauthorized: %v", err))
+				renderJSON(w, http.StatusUnauthorized, jsonErrf("invalid scope format: %v", err))
 				return
 			}
 			u := newUser()
-			defer releaseUser(u)
-			err = auth.Get(cs.Id, u)
+			defer returnUser(u)
+			cs := newClaims()
+			defer returnClaims(cs)
+			token, err = validator.ValidateToken(token, u, cs, Scope(scope), r.Header.Get("X-Auth-Renew") == "1")
 			if err != nil {
-				msg := fmt.Sprintf("[auth_api] error getting user: %v", err)
-				log.Errorf(msg)
-				renderErrorJSON(w, http.StatusInternalServerError, msg)
+				renderJSON(w, http.StatusUnauthorized, jsonErrf("invalid token: %v", err))
 				return
 			}
-			if r.Header.Get("X-Auth-Renew") == "1" {
-				w.Header().Set("Authorization", fmt.Sprintf("Bearer %s", token))
-			}
-			next.ServeHTTP(w, r.WithContext(Wrap(r.Context(), u, cs)))
+			w.Header().Set("Authorization", fmt.Sprintf("Bearer %s", token))
+			next.ServeHTTP(w, r.WithContext(WithContext(r.Context(), u, cs)))
 		}
 		return http.HandlerFunc(fn)
 	}
@@ -97,7 +98,7 @@ func AuthMiddleware(auth UserTokenChecker) func(http.Handler) http.Handler {
 
 func LogoutHandler(auth UserLogoutHandler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		u := Get(r.Context())
+		u := ContextUser(r.Context())
 		if u == nil {
 			// we consider the user to be already logged out
 			w.WriteHeader(http.StatusOK)
@@ -105,9 +106,7 @@ func LogoutHandler(auth UserLogoutHandler) http.HandlerFunc {
 		}
 		err := auth.Logout(*u)
 		if err != nil {
-			msg := fmt.Sprintf("[auth_api] unexpected error during user '%s' logout: %v", u.Username, err)
-			log.Error(msg)
-			renderErrorJSON(w, http.StatusInternalServerError, msg)
+			renderJSON(w, http.StatusInternalServerError, jsonErrf("unexpected error: %v", err))
 			return
 		}
 		w.WriteHeader(http.StatusOK)
@@ -117,27 +116,22 @@ func LogoutHandler(auth UserLogoutHandler) http.HandlerFunc {
 func LoginHandler(auth UserLoginHandler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		usr := newUser()
-		defer releaseUser(usr)
-		defer r.Body.Close()
-		err := decodeJSON(r.Body, usr)
+		defer returnUser(usr)
+		err := json.NewDecoder(r.Body).Decode(usr)
 		if err != nil {
-			renderErrorJSON(w, http.StatusBadRequest, err.Error())
+			renderJSON(w, http.StatusBadRequest, jsonErrf("could not decode request: %v", err))
 			return
 		}
 		token, err := auth.Login(usr)
 		if err != nil {
-			cause := errors.Cause(err)
-			if cause == ErrBadRequest {
-				renderErrorJSON(w, http.StatusBadRequest, "bad request")
-				return
+			switch {
+			case errors.Is(err, ErrWrongUserPass):
+				renderJSON(w, http.StatusUnauthorized, jsonErr("wrong username or password"))
+			case errors.Is(err, ErrNotFound):
+				renderJSON(w, http.StatusUnauthorized, jsonErr("wrong username or password"))
+			default:
+				renderJSON(w, http.StatusInternalServerError, jsonErrf("unexpected error: %v", err))
 			}
-			if cause == ErrWrongUserPass || cause == ErrNotFound {
-				renderErrorJSON(w, http.StatusUnauthorized, "wrong username or password")
-				return
-			}
-			msg := fmt.Sprintf("[auth_api] unexpected error during user '%s' signin: %v", usr.Username, err)
-			log.Error(msg)
-			renderErrorJSON(w, http.StatusInternalServerError, msg)
 			return
 		}
 		w.Header().Set("Authorization", fmt.Sprintf("Bearer %s", token))
@@ -145,73 +139,78 @@ func LoginHandler(auth UserLoginHandler) http.HandlerFunc {
 	}
 }
 
-func GetAllHandler(auth UserAdmin) http.HandlerFunc {
+func GetAllUsersHandler(reader UserReader, access Scope) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		u := Get(r.Context())
-		if u.Rigths < adminRights {
-			renderErrorJSON(w, http.StatusUnauthorized, "operation unauthorized")
+		u := ContextUser(r.Context())
+		if !u.Scope.Is(access) {
+			renderJSON(w, http.StatusUnauthorized, jsonErr("operation unauthorized"))
 		}
-		users, err := auth.GetAll()
+		users, err := reader.GetAllUsers()
 		if err != nil {
-			msg := fmt.Sprintf("[auth_api] error getting list of users: %v", err)
-			log.Errorf(msg)
-			renderErrorJSON(w, http.StatusInternalServerError, msg)
+			renderJSON(w, http.StatusInternalServerError, jsonErrf("could not fetch users: %v", err))
 			return
 		}
-		renderJSON(w, users)
+		renderJSON(w, http.StatusOK, users)
 	}
 }
 
-func CreateUserHandler(auth UserAdmin) http.HandlerFunc {
+func CreateUserHandler(writer UserWriter, access Scope) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		u := Get(r.Context())
-		if u.Rigths < adminRights {
-			renderErrorJSON(w, http.StatusUnauthorized, "operation unauthorized")
+		u := ContextUser(r.Context())
+		if !u.Scope.Is(access) {
+			renderJSON(w, http.StatusUnauthorized, jsonErr("operation unauthorized"))
 		}
-		usr := new(User)
-		defer r.Body.Close()
-		err := decodeJSON(r.Body, usr)
+		var usr User
+		err := json.NewDecoder(r.Body).Decode(&usr)
 		if err != nil {
-			renderErrorJSON(w, http.StatusBadRequest, err.Error())
+			renderJSON(w, http.StatusBadRequest, jsonErrf("could not decode request: %v", err))
 			return
 		}
-		err = auth.Create(usr)
+		err = writer.CreateUser(usr)
 		if err != nil {
-			cause := errors.Cause(err)
-			if cause == ErrBadRequest {
-				renderErrorJSON(w, http.StatusBadRequest, "bad request")
-				return
+			var verr validation.Errors
+			switch {
+			case errors.As(err, &verr):
+				renderJSON(w, http.StatusBadRequest, verr)
+			case errors.Is(err, ErrExists):
+				renderJSON(w, http.StatusConflict, jsonErr("user already exists"))
+			default:
+				renderJSON(w, http.StatusInternalServerError, jsonErrf("unexpected error: %v", err))
 			}
-			if cause == ErrExists {
-				renderErrorJSON(w, http.StatusConflict, "user already exists")
-				return
-			}
-			msg := fmt.Sprintf("[auth_api] unexpected error during user creation: %v", err)
-			log.Errorf(msg)
-			renderErrorJSON(w, http.StatusInternalServerError, msg)
 			return
 		}
-		renderJSON(w, usr)
+		renderJSON(w, http.StatusOK, usr)
 	}
 }
 
-func CheckTokenHandler(auth TokenChecker) http.HandlerFunc {
+type CheckRequest struct {
+	Token  string `json:"token"`
+	Update bool   `json:"update"`
+	Scope  Scope  `json:"scope"`
+}
+
+func CheckTokenHandler(validator TokenValidator) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		req := new(checkRequest)
-		defer r.Body.Close()
-		err := decodeJSON(r.Body, req)
+		if r.Body == nil {
+			renderJSON(w, http.StatusBadRequest, jsonErr("could not decode request: empty body"))
+			return
+		}
+		var req CheckRequest
+		err := json.NewDecoder(r.Body).Decode(&req)
 		if err != nil {
-			renderErrorJSON(w, http.StatusBadRequest, err.Error())
+			renderJSON(w, http.StatusBadRequest, jsonErrf("could not decode request: %v", err))
 			return
 		}
 		cs := newClaims()
 		defer returnClaims(cs)
-		token, err := auth.CheckToken(req.Token, req.Update, cs)
+		u := newUser()
+		defer returnUser(u)
+		token, err := validator.ValidateToken(req.Token, u, cs, req.Scope, req.Update)
 		if err != nil {
-			renderErrorJSON(w, http.StatusUnauthorized, fmt.Sprintf("error checking token: %v", err))
+			renderJSON(w, http.StatusUnauthorized, jsonErrf("invalid token: %v", err))
 			return
 		}
-		renderJSON(w, struct {
+		renderJSON(w, http.StatusOK, struct {
 			Token  string  `json:"token"`
 			Claims *Claims `json:"claims"`
 		}{
@@ -221,23 +220,13 @@ func CheckTokenHandler(auth TokenChecker) http.HandlerFunc {
 	}
 }
 
-func renderErrorJSON(w http.ResponseWriter, status int, err string) {
+func renderJSON(w http.ResponseWriter, status int, res interface{}) {
+	data, err := json.Marshal(res)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(err.Error()))
+	}
 	w.Header().Add("Content-Type", "application/json")
 	w.WriteHeader(status)
-	enc := json.NewEncoder(w)
-	enc.Encode(struct {
-		Error string `json:"error"`
-	}{err})
-}
-
-func renderJSON(w http.ResponseWriter, res interface{}) {
-	w.Header().Add("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	enc := json.NewEncoder(w)
-	enc.Encode(res)
-}
-
-func decodeJSON(r io.Reader, v interface{}) error {
-	defer io.Copy(ioutil.Discard, r)
-	return json.NewDecoder(r).Decode(v)
+	_, _ = w.Write(data)
 }
