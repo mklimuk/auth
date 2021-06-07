@@ -12,6 +12,12 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+var _ UserLoginHandler = &Auth{}
+var _ TokenValidator = &Auth{}
+var _ TokenGenerator = &Auth{}
+var _ TokenReader = &Auth{}
+var _ TokenRemover = &Auth{}
+
 var entropy *rand.Rand
 
 var claimsPool *sync.Pool
@@ -66,6 +72,10 @@ type UserStore interface {
 
 type UserTokenStore interface {
 	GetUserToken(string, *Token) error
+	GetUserTokenByValue(string, *Token) error
+	GetUserTokens(user string) ([]Token, error)
+	DeleteUserToken(id string) error
+	SaveUserToken(Token) error
 }
 
 var _ UserReadWriter = &Auth{}
@@ -81,7 +91,9 @@ func New(users UserStore, tokens UserTokenStore, opts Opts) *Auth {
 	return &Auth{users: users, tokens: tokens, opts: opts}
 }
 
-func (a *Auth) Login(username, password string, u *User) (string, error) {
+func (a *Auth) Login(username, password string) (string, error) {
+	u := newUser()
+	defer returnUser(u)
 	err := a.users.GetUserByUsername(username, u)
 	if err != nil {
 		return "", err
@@ -93,36 +105,36 @@ func (a *Auth) Login(username, password string, u *User) (string, error) {
 	return buildJwt(u.ID, u.Username, u.Name, a.opts.PasswordSecret, a.opts.TokenTTL, u.Scope)
 }
 
-func (a *Auth) ValidateToken(token string, u *User, cs *Claims, scope Scope, update bool) (string, error) {
+func (a *Auth) ValidateToken(token string, u *User, cs *Claims, update bool) (string, error) {
 	tok := newToken()
 	defer releaseToken(tok)
-	err := a.tokens.GetUserToken(token, tok)
+	err := a.tokens.GetUserTokenByValue(token, tok)
 	// if token found, validate
-	if err == nil {
-		if tok.ExpiresAt.Before(time.Now()) {
+	if err != nil {
+		if err != ErrNotFound {
+			return "", fmt.Errorf("could not fetch token: %w", err)
+		}
+		err = parseJwt(token, a.opts.PasswordSecret, cs)
+		if err != nil {
+			return token, fmt.Errorf("could not parse token: %w", err)
+		}
+	} else {
+		if !tok.ExpiresAt.IsZero() && tok.ExpiresAt.Before(time.Now()) {
 			return "", ErrTokenExpired
 		}
-		if !tok.Scope.Is(scope) {
-			return "", ErrUnauthorized
-		}
-		return token, nil
+		// we need to populate claims by hand
+		cs.Id = tok.Owner
+		now := time.Now()
+		cs.IssuedAt = now.Unix()
+		cs.Scope = tok.Scope
+		cs.ExpiresAt = now.Add(a.opts.TokenTTL).Unix()
 	}
-	if err != ErrNotFound {
-		return "", fmt.Errorf("could not fetch token: %w", err)
-	}
-	err = parseJwt(token, a.opts.PasswordSecret, cs)
+	err = a.users.GetUser(cs.Id, u)
 	if err != nil {
-		return token, fmt.Errorf("could not parse token: %w", err)
-	}
-	if !cs.Scope.Is(scope) {
-		return token, ErrUnauthorized
+		return token, fmt.Errorf("could not get user: %w", err)
 	}
 	if !update {
 		return token, nil
-	}
-	err = a.users.GetUserByUsername(cs.Username, u)
-	if err != nil {
-		return token, fmt.Errorf("could not get user: %w", err)
 	}
 	return u.toJwt(a.opts.PasswordSecret, u.Scope, a.opts.TokenTTL)
 }
@@ -133,10 +145,6 @@ func (a *Auth) Logout(User) error {
 }
 
 func (a *Auth) CreateUser(u User) error {
-	err := u.Validate()
-	if err != nil {
-		return fmt.Errorf("invalid user entity: %w", err)
-	}
 	ID, err := ulid.New(ulid.Timestamp(time.Now()), entropy)
 	if err != nil {
 		return fmt.Errorf("could not init generator: %w", err)
@@ -164,4 +172,37 @@ func (a *Auth) GetUser(ID string, u *User) error {
 
 func (a *Auth) GetAllUsers() ([]*User, error) {
 	return a.users.AllUsers(0, 10)
+}
+
+func (a *Auth) GenerateUserToken(owner, description string, scope Scope, expires time.Time) (Token, error) {
+	token, err := generateToken(owner, description, scope, expires, 24)
+	if err != nil {
+		return Token{}, fmt.Errorf("could not generate token: %w", err)
+	}
+	err = a.tokens.SaveUserToken(token)
+	if err != nil {
+		return Token{}, fmt.Errorf("could not save token: %w", err)
+	}
+	return token, nil
+}
+
+func (a *Auth) GetUserTokens(user string) ([]Token, error) {
+	return a.tokens.GetUserTokens(user)
+}
+
+func (a *Auth) GetUserToken(id string, t *Token) error {
+	return a.tokens.GetUserToken(id, t)
+}
+
+func (a *Auth) DeleteUserToken(id string, u *User) error {
+	tok := newToken()
+	defer releaseToken(tok)
+	err := a.tokens.GetUserToken(id, tok)
+	if err != nil {
+		return fmt.Errorf("could not verify token: %w", err)
+	}
+	if tok.Owner != u.ID {
+		return ErrUnauthorized
+	}
+	return a.tokens.DeleteUserToken(id)
 }

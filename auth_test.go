@@ -19,16 +19,19 @@ func TestManager_CreateUser(t *testing.T) {
 }
 
 func TestManager_Login(t *testing.T) {
-	s := &storeMock{}
-	s.On("GetUserByUsername", "michal", mock.AnythingOfType("*auth.User")).Run(func(a mock.Arguments) {
-		u := a[1].(*User)
-		u.Username = "michal"
-		u.Name = "Michal Klimuk"
-		u.Password = "$2a$10$H9Bs2caL.R1mJNeNtJs07uGUtrWXwoHwWbQtwZ0yBEvZ9jJ1o4d26"
-		u.Scope = 7
-	}).Return(nil)
+	s := &storeMock{
+		users: map[string]*User{
+			"michal": {
+				Username: "michal",
+				Name:     "Michal Klimuk",
+				Password: "$2a$10$H9Bs2caL.R1mJNeNtJs07uGUtrWXwoHwWbQtwZ0yBEvZ9jJ1o4d26",
+				Scope:    7,
+			},
+		},
+	}
+	s.On("GetUserByUsername", "michal").Return(nil)
 	m := New(s, s, Opts{TokenTTL: 30 * time.Second, PasswordSecret: []byte("m!ch4l_")})
-	token, err := m.Login("michal", "test123", &User{})
+	token, err := m.Login("michal", "test123")
 	assert.NoError(t, err)
 	assert.NotEmpty(t, token)
 }
@@ -62,28 +65,29 @@ func TestManager_ValidateToken(t *testing.T) {
 	defer returnClaims(c)
 	u := newUser()
 	defer returnUser(u)
-	s := &storeMock{}
+	s := &storeMock{
+		users: map[string]*User{
+			"mklimuk": {
+				Username: "mklimuk",
+				Name:     "Michal Klimuk",
+				Password: "$2a$10$H9Bs2caL.R1mJNeNtJs07uGUtrWXwoHwWbQtwZ0yBEvZ9jJ1o4d26",
+				Scope:    7,
+			},
+		},
+	}
 	m := New(s, s, Opts{PasswordSecret: []byte("m!ch4l_"), TokenTTL: 30 * time.Second})
 	s.On("GetUserToken", token).Return(ErrNotFound).Once()
-	_, err := m.ValidateToken(token, u, c, 0xFF, true)
+	_, err := m.ValidateToken(token, u, c, true)
 	assert.Error(t, err)
 	token, err = buildJwt("u1", "mklimuk", "Michal", []byte("m!ch4l_"), 30*time.Second, 7)
 	s.On("GetUserToken", token).Return(ErrNotFound).Once()
-	s.On("GetUserByUsername", "mklimuk", mock.Anything).Run(func(args mock.Arguments) {
-		user := args.Get(1).(*User)
-		user.Username = "mklimuk"
-		user.Scope = 7
-	}).Return(nil).Once()
-	updated, err := m.ValidateToken(token, u, c, 0xFF, true)
+	s.On("GetUserByUsername", "mklimuk", mock.Anything).Return(nil).Once()
+	updated, err := m.ValidateToken(token, u, c, true)
 	assert.NoError(t, err)
 	assert.NotEmpty(t, updated)
 	s.On("GetUserToken", updated).Return(ErrNotFound).Once()
-	s.On("GetUserByUsername", "mklimuk", mock.Anything).Run(func(args mock.Arguments) {
-		user := args.Get(1).(*User)
-		user.Username = "mklimuk"
-		user.Scope = 7
-	}).Return(nil).Once()
-	updated, err = m.ValidateToken(updated, u, c, 0xFF, true)
+	s.On("GetUserByUsername", "mklimuk").Return(nil).Once()
+	updated, err = m.ValidateToken(updated, u, c, true)
 	assert.NoError(t, err)
 	assert.NotEmpty(t, updated)
 	assert.Equal(t, "mklimuk", c.Username)
@@ -93,6 +97,21 @@ func TestManager_ValidateToken(t *testing.T) {
 
 type storeMock struct {
 	mock.Mock
+	users  map[string]*User
+	tokens map[string]*Token
+}
+
+func (m *storeMock) GetUserTokenByValue(s string, token *Token) error {
+	panic("implement me")
+}
+
+func (m *storeMock) DeleteUserToken(id string) error {
+	panic("implement me")
+}
+
+func (m *storeMock) GetUserTokens(user string) ([]Token, error) {
+	args := m.Called(user)
+	return args.Get(0).([]Token), args.Error(1)
 }
 
 func (m *storeMock) SaveUser(u User) error {
@@ -100,8 +119,14 @@ func (m *storeMock) SaveUser(u User) error {
 	return args.Error(0)
 }
 
-func (m *storeMock) GetUserToken(ID string, _ *Token) error {
+func (m *storeMock) GetUserToken(ID string, tok *Token) error {
 	args := m.Called(ID)
+	if m.tokens != nil {
+		if saved := m.tokens[ID]; saved != nil {
+			// copy user from cache
+			*tok = *saved
+		}
+	}
 	return args.Error(0)
 }
 
@@ -111,12 +136,24 @@ func (m *storeMock) SaveToken(t Token) error {
 }
 
 func (m *storeMock) GetUser(ID string, u *User) error {
-	args := m.Called(ID, u)
+	args := m.Called(ID)
+	if m.users != nil {
+		if saved := m.users[ID]; saved != nil {
+			// copy user from cache
+			*u = *saved
+		}
+	}
 	return args.Error(0)
 }
 
 func (m *storeMock) GetUserByUsername(username string, u *User) error {
-	args := m.Called(username, u)
+	args := m.Called(username)
+	if m.users != nil {
+		if saved := m.users[username]; saved != nil {
+			// copy user from cache
+			*u = *saved
+		}
+	}
 	return args.Error(0)
 }
 

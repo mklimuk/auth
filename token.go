@@ -7,6 +7,8 @@ import (
 	"math/big"
 	"sync"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 var tokenPool *sync.Pool
@@ -34,14 +36,16 @@ func releaseToken(t *Token) {
 }
 
 type Token struct {
-	Token     string `storm:"id"`
-	Owner     string
-	Created   time.Time
-	ExpiresAt time.Time
-	Scope     Scope
+	ID          string    `storm:"id" json:"id"`
+	Token       string    `json:"-"`
+	Description string    `json:"description"`
+	Owner       string    `storm:"index" json:"owner"`
+	Created     time.Time `json:"created"`
+	ExpiresAt   time.Time `json:"expires_at"`
+	Scope       Scope     `json:"scope"`
 }
 
-func generateToken(owner string, scope Scope, expires time.Time, size int) (Token, error) {
+func generateToken(owner, description string, scope Scope, expires time.Time, size int) (Token, error) {
 	const letters = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 	ret := make([]byte, size)
 	for i := 0; i < size; i++ {
@@ -52,10 +56,12 @@ func generateToken(owner string, scope Scope, expires time.Time, size int) (Toke
 		ret[i] = letters[num.Int64()]
 	}
 	return Token{
-		Token:     string(ret),
-		Owner:     owner,
-		Created:   time.Now().In(time.UTC),
-		Scope:     scope,
-		ExpiresAt: expires,
+		ID:          uuid.New().String(),
+		Token:       string(ret),
+		Description: description,
+		Owner:       owner,
+		Created:     time.Now().In(time.UTC),
+		Scope:       scope,
+		ExpiresAt:   expires,
 	}, nil
 }

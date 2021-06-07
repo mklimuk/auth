@@ -5,15 +5,15 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
+	"time"
 
-	validation "github.com/go-ozzo/ozzo-validation/v4"
+	"github.com/go-chi/chi"
 )
 
 //UserLoginHandler is an access layer for user-related operations
 type UserLoginHandler interface {
-	Login(*User) (string, error)
+	Login(string, string) (string, error)
 }
 
 type UserLogoutHandler interface {
@@ -29,13 +29,25 @@ type UserWriter interface {
 	CreateUser(User) error
 }
 
+type TokenGenerator interface {
+	GenerateUserToken(owner, description string, scope Scope, expires time.Time) (Token, error)
+}
+
+type TokenRemover interface {
+	DeleteUserToken(id string, u *User) error
+}
+
+type TokenReader interface {
+	GetUserTokens(string) ([]Token, error)
+}
+
 type UserReadWriter interface {
 	UserReader
 	UserWriter
 }
 
 type TokenValidator interface {
-	ValidateToken(token string, user *User, claims *Claims, scope Scope, update bool) (string, error)
+	ValidateToken(token string, user *User, claims *Claims, update bool) (string, error)
 }
 
 // Err is a json error wrapper
@@ -62,7 +74,7 @@ func parseAuthorizationHeader(r *http.Request) string {
 func Middleware(validator TokenValidator) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		fn := func(w http.ResponseWriter, r *http.Request) {
-			token := strings.TrimPrefix(r.URL.Query().Get("token"), "Bearer ")
+			token := r.URL.Query().Get("token")
 			if token == "" {
 				token = parseAuthorizationHeader(r)
 			}
@@ -70,21 +82,11 @@ func Middleware(validator TokenValidator) func(http.Handler) http.Handler {
 				renderJSON(w, http.StatusUnauthorized, jsonErr("authorization bearer token not present"))
 				return
 			}
-			s := r.Header.Get("X-Auth-Scope")
-			if s == "" {
-				renderJSON(w, http.StatusUnauthorized, jsonErr("missing authentication scope"))
-				return
-			}
-			scope, err := strconv.Atoi(s)
-			if err != nil {
-				renderJSON(w, http.StatusUnauthorized, jsonErrf("invalid scope format: %v", err))
-				return
-			}
 			u := newUser()
 			defer returnUser(u)
 			cs := newClaims()
 			defer returnClaims(cs)
-			token, err = validator.ValidateToken(token, u, cs, Scope(scope), r.Header.Get("X-Auth-Renew") == "1")
+			token, err := validator.ValidateToken(token, u, cs, r.Header.Get("X-Auth-Renew") == "1")
 			if err != nil {
 				renderJSON(w, http.StatusUnauthorized, jsonErrf("invalid token: %v", err))
 				return
@@ -115,14 +117,16 @@ func LogoutHandler(auth UserLogoutHandler) http.HandlerFunc {
 
 func LoginHandler(auth UserLoginHandler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		usr := newUser()
-		defer returnUser(usr)
-		err := json.NewDecoder(r.Body).Decode(usr)
+		var req struct {
+			Username string `json:"username"`
+			Password string `json:"password"`
+		}
+		err := json.NewDecoder(r.Body).Decode(&req)
 		if err != nil {
 			renderJSON(w, http.StatusBadRequest, jsonErrf("could not decode request: %v", err))
 			return
 		}
-		token, err := auth.Login(usr)
+		token, err := auth.Login(req.Username, req.Password)
 		if err != nil {
 			switch {
 			case errors.Is(err, ErrWrongUserPass):
@@ -159,6 +163,7 @@ func CreateUserHandler(writer UserWriter, access Scope) http.HandlerFunc {
 		u := ContextUser(r.Context())
 		if !u.Scope.Is(access) {
 			renderJSON(w, http.StatusUnauthorized, jsonErr("operation unauthorized"))
+			return
 		}
 		var usr User
 		err := json.NewDecoder(r.Body).Decode(&usr)
@@ -166,12 +171,14 @@ func CreateUserHandler(writer UserWriter, access Scope) http.HandlerFunc {
 			renderJSON(w, http.StatusBadRequest, jsonErrf("could not decode request: %v", err))
 			return
 		}
+		err = usr.Validate()
+		if err != nil {
+			renderJSON(w, http.StatusBadRequest, err)
+			return
+		}
 		err = writer.CreateUser(usr)
 		if err != nil {
-			var verr validation.Errors
 			switch {
-			case errors.As(err, &verr):
-				renderJSON(w, http.StatusBadRequest, verr)
 			case errors.Is(err, ErrExists):
 				renderJSON(w, http.StatusConflict, jsonErr("user already exists"))
 			default:
@@ -183,10 +190,65 @@ func CreateUserHandler(writer UserWriter, access Scope) http.HandlerFunc {
 	}
 }
 
+func GetUserTokens(reader TokenReader) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		u := ContextUser(r.Context())
+		tokens, err := reader.GetUserTokens(u.ID)
+		if err != nil {
+			renderJSON(w, http.StatusInternalServerError, jsonErrf("unexpected error: %v", err))
+			return
+		}
+		renderJSON(w, http.StatusOK, tokens)
+	}
+}
+
+func GenerateUserTokenHandler(writer TokenGenerator, access Scope) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		u := ContextUser(r.Context())
+		if !u.Scope.Is(access) {
+			fmt.Printf("%+v not %d\n", u, access)
+			renderJSON(w, http.StatusUnauthorized, jsonErr("operation unauthorized"))
+			return
+		}
+		var req struct {
+			Description string    `json:"description"`
+			Scope       int       `json:"scope"`
+			ExpiresAt   time.Time `json:"expires_at"`
+		}
+		err := json.NewDecoder(r.Body).Decode(&req)
+		if err != nil {
+			renderJSON(w, http.StatusBadRequest, jsonErrf("could not decode request: %v", err))
+			return
+		}
+		token, err := writer.GenerateUserToken(u.ID, req.Description, Scope(req.Scope), req.ExpiresAt)
+		if err != nil {
+			renderJSON(w, http.StatusInternalServerError, jsonErrf("unexpected error: %v", err))
+			return
+		}
+		resp := struct {
+			Token
+			Value string `json:"value"`
+		}{Token: token, Value: token.Token}
+		renderJSON(w, http.StatusOK, resp)
+	}
+}
+
+func DeleteUserToken(store TokenRemover) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		u := ContextUser(r.Context())
+		id := chi.URLParam(r, "id")
+		err := store.DeleteUserToken(id, u)
+		if err != nil {
+			renderJSON(w, http.StatusInternalServerError, jsonErrf("unexpected error: %v", err))
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
 type CheckRequest struct {
 	Token  string `json:"token"`
 	Update bool   `json:"update"`
-	Scope  Scope  `json:"scope"`
 }
 
 func CheckTokenHandler(validator TokenValidator) http.HandlerFunc {
@@ -205,7 +267,7 @@ func CheckTokenHandler(validator TokenValidator) http.HandlerFunc {
 		defer returnClaims(cs)
 		u := newUser()
 		defer returnUser(u)
-		token, err := validator.ValidateToken(req.Token, u, cs, req.Scope, req.Update)
+		token, err := validator.ValidateToken(req.Token, u, cs, req.Update)
 		if err != nil {
 			renderJSON(w, http.StatusUnauthorized, jsonErrf("invalid token: %v", err))
 			return

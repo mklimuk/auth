@@ -3,8 +3,9 @@ package auth
 import (
 	"fmt"
 
-	"github.com/asdine/storm"
-	cgob "github.com/asdine/storm/codec/gob"
+	"github.com/asdine/storm/v3"
+	cgob "github.com/asdine/storm/v3/codec/gob"
+	"github.com/asdine/storm/v3/q"
 )
 
 var _ UserStore = &BoltStore{}
@@ -43,7 +44,7 @@ func (s *BoltStore) SaveUser(u User) error {
 	return err
 }
 
-func (s *BoltStore) SaveToken(t Token) error {
+func (s *BoltStore) SaveUserToken(t Token) error {
 	err := s.db.Save(&t)
 	if err == storm.ErrAlreadyExists {
 		return ErrExists
@@ -67,20 +68,45 @@ func (s *BoltStore) GetUserByUsername(username string, u *User) error {
 	return err
 }
 
-func (s *BoltStore) GetUserToken(value string, t *Token) error {
-	err := s.db.One("Token", value, t)
+func (s *BoltStore) GetUserToken(id string, t *Token) error {
+	err := s.db.Select(q.Eq("ID", id)).First(t)
 	if err == storm.ErrNotFound {
 		return ErrNotFound
 	}
 	return err
 }
 
-func (s *BoltStore) GetUserByPasscode(pass string, u *User) error {
-	err := s.db.One("Passcode", pass, u)
+func (s *BoltStore) GetUserTokenByValue(value string, t *Token) error {
+	err := s.db.Select(q.Eq("Token", value)).First(t)
 	if err == storm.ErrNotFound {
 		return ErrNotFound
 	}
 	return err
+}
+
+func (s *BoltStore) GetUserTokens(user string) ([]Token, error) {
+	var res []Token
+	err := s.db.Select(q.Eq("Owner", user)).Find(&res)
+	if err != nil {
+		if err == storm.ErrNotFound {
+			return []Token{}, nil
+		}
+		return nil, fmt.Errorf("could not retrieve tokens: %w", err)
+	}
+	return res, nil
+}
+
+func (s *BoltStore) DeleteUserToken(id string) error {
+	tok := newToken()
+	defer releaseToken(tok)
+	err := s.db.One("ID", id, tok)
+	if err != nil {
+		if err == storm.ErrNotFound {
+			return nil
+		}
+		return err
+	}
+	return s.db.DeleteStruct(tok)
 }
 
 func (s *BoltStore) DeleteUser(ID string) error {

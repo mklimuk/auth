@@ -22,7 +22,6 @@ func parseJwt(tokenString string, secret []byte, c *Claims) error {
 	}
 
 	now := time.Now()
-	fmt.Printf("%+v\n", c)
 	deadline := time.Unix(c.ExpiresAt, 0).In(time.UTC)
 	if deadline.Before(now) {
 		return ErrUnauthorized

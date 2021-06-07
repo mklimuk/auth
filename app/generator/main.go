@@ -49,7 +49,7 @@ func generateWithPasscode(args []string) (*auth.User, error) {
 		fmt.Printf(helpPasscode, l)
 		return nil, errBadRequest
 	}
-	u := auth.New(nil, auth.Opts{})
+	u := auth.New(nil, nil, auth.Opts{})
 	scope, err := strconv.Atoi(args[3])
 	if err != nil {
 		fmt.Printf("[ERROR] could not parse scope (must be an integer): %v\n", err)
@@ -57,9 +57,9 @@ func generateWithPasscode(args []string) (*auth.User, error) {
 	}
 	user := auth.User{
 		Username: args[0],
-		Passcode: args[1],
-		Name:     args[2],
-		Scope:    auth.Scope(scope),
+		//Passcode: args[1],
+		Name:  args[2],
+		Scope: auth.Scope(scope),
 	}
 	err = u.CreateUser(user)
 	return &user, err
@@ -71,7 +71,7 @@ func generateWithPassword(args []string) (*auth.User, error) {
 		fmt.Printf(helpPassword, l)
 		return nil, errBadRequest
 	}
-	u := auth.New(nil, auth.Opts{PasswordSecret: []byte(args[4])})
+	u := auth.New(nil, nil, auth.Opts{PasswordSecret: []byte(args[4])})
 	scope, err := strconv.Atoi(args[3])
 	if err != nil {
 		fmt.Printf("[ERROR] could not parse scope (must be an integer): %v\n", err)

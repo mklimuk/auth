@@ -38,7 +38,32 @@ func TestCreate(t *testing.T) {
 	if assert.NotNil(t, users) {
 		assert.Len(t, users, 2)
 	}
+}
 
+func TestTokens(t *testing.T) {
+	s, err := NewStoreWrapper()
+	require.NoError(t, err)
+	assert.NoError(t, s.store.SaveToken(Token{ID: "1", Owner: "test1", Scope: 7, Description: "test token", Token: "token1_1"}))
+	assert.NoError(t, s.store.SaveToken(Token{ID: "2", Owner: "test1", Scope: 7, Description: "test token", Token: "token1_2"}))
+	assert.NoError(t, s.store.SaveToken(Token{ID: "3", Owner: "test1", Scope: 7, Description: "test token", Token: "token1_3"}))
+	assert.NoError(t, s.store.SaveToken(Token{ID: "4", Owner: "test2", Scope: 7, Description: "test token", Token: "token2_1"}))
+	tokens, err := s.store.GetUserTokens("test3")
+	assert.NoError(t, err)
+	assert.Len(t, tokens, 0)
+	tokens, err = s.store.GetUserTokens("test2")
+	assert.NoError(t, err)
+	assert.Len(t, tokens, 1)
+	tokens, err = s.store.GetUserTokens("test1")
+	assert.NoError(t, err)
+	assert.Len(t, tokens, 3)
+	var tok Token
+	assert.NoError(t, s.store.GetUserToken("token1_2", &tok))
+	assert.Equal(t, "test1", tok.Owner)
+	assert.NoError(t, s.store.DeleteUserToken("5"))
+	assert.NoError(t, s.store.DeleteUserToken("3"))
+	tokens, err = s.store.GetUserTokens("test1")
+	assert.NoError(t, err)
+	assert.Len(t, tokens, 2)
 }
 
 type StoreWrapper struct {
@@ -47,7 +72,7 @@ type StoreWrapper struct {
 }
 
 func NewStoreWrapper() (*StoreWrapper, error) {
-	w := new(StoreWrapper)
+	w := &StoreWrapper{}
 	var err error
 	if w.f, err = ioutil.TempFile(os.TempDir(), "test_authstore"); err != nil {
 		return w, err
@@ -57,6 +82,6 @@ func NewStoreWrapper() (*StoreWrapper, error) {
 }
 
 func (w *StoreWrapper) Cleanup() {
-	w.store.db.Close()
-	os.Remove(w.f.Name())
+	_ = w.store.db.Close()
+	_ = os.Remove(w.f.Name())
 }
