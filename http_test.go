@@ -95,7 +95,7 @@ func TestLoginHandler(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			req, err := http.NewRequest(http.MethodPut, "/token/check", bytes.NewBufferString(test.body))
 			require.NoError(t, err)
-			req.Header.Set("Content-Type", "application/x.login.req+json")
+			req.Header.Set("Content-MsgType", "application/x.login.req+json")
 			res := httptest.NewRecorder()
 			auth := &serviceMock{}
 			test.init(auth)
@@ -133,7 +133,7 @@ func TestCheckTokenHandler(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			req, err := http.NewRequest(http.MethodPut, "/token/check", bytes.NewBufferString(test.body))
 			require.NoError(t, err)
-			req.Header.Set("Content-Type", "application/x.token.check+json")
+			req.Header.Set("Content-MsgType", "application/x.token.check+json")
 			res := httptest.NewRecorder()
 			auth := &serviceMock{}
 			test.init(auth)
@@ -182,7 +182,7 @@ func TestCreateUserHandler(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			req, err := http.NewRequest(http.MethodPut, "/token/check", bytes.NewBufferString(test.body))
 			require.NoError(t, err)
-			req.Header.Set("Content-Type", "application/x.token.check+json")
+			req.Header.Set("Content-MsgType", "application/x.token.check+json")
 			req = req.WithContext(WithContext(context.Background(), &User{Scope: 7}, &Claims{}))
 			res := httptest.NewRecorder()
 			service := &serviceMock{}
@@ -213,7 +213,7 @@ func TestGenerateUserTokenHandler(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			req, err := http.NewRequest(http.MethodPut, "/token/check", bytes.NewBufferString(test.body))
 			require.NoError(t, err)
-			req.Header.Set("Content-Type", "application/x.token.check+json")
+			req.Header.Set("Content-MsgType", "application/x.token.check+json")
 			req = req.WithContext(WithContext(context.Background(), &User{ID: "test", Scope: 7}, &Claims{}))
 			res := httptest.NewRecorder()
 			service := &serviceMock{}

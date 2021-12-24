@@ -102,7 +102,7 @@ type storeMock struct {
 }
 
 func (m *storeMock) GetUserTokenByValue(s string, token *Token) error {
-	panic("implement me")
+	return nil
 }
 
 func (m *storeMock) DeleteUserToken(id string) error {
@@ -130,7 +130,7 @@ func (m *storeMock) GetUserToken(ID string, tok *Token) error {
 	return args.Error(0)
 }
 
-func (m *storeMock) SaveToken(t Token) error {
+func (m *storeMock) SaveUserToken(t Token) error {
 	args := m.Called(t)
 	return args.Error(0)
 }

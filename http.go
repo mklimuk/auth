@@ -74,7 +74,7 @@ func parseAuthorizationHeader(r *http.Request) string {
 func Middleware(validator TokenValidator) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		fn := func(w http.ResponseWriter, r *http.Request) {
-			token := r.URL.Query().Get("token")
+			token := strings.TrimPrefix(r.URL.Query().Get("token"), "Bearer ")
 			if token == "" {
 				token = parseAuthorizationHeader(r)
 			}
@@ -288,7 +288,7 @@ func renderJSON(w http.ResponseWriter, status int, res interface{}) {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte(err.Error()))
 	}
-	w.Header().Add("Content-Type", "application/json")
+	w.Header().Add("Content-MsgType", "application/json")
 	w.WriteHeader(status)
 	_, _ = w.Write(data)
 }
