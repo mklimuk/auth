@@ -202,14 +202,9 @@ func GetUserTokens(reader TokenReader) http.HandlerFunc {
 	}
 }
 
-func GenerateUserTokenHandler(writer TokenGenerator, access Scope) http.HandlerFunc {
+func GenerateUserTokenHandler(writer TokenGenerator) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		u := ContextUser(r.Context())
-		if !u.Scope.Is(access) {
-			fmt.Printf("%+v not %d\n", u, access)
-			renderJSON(w, http.StatusUnauthorized, jsonErr("operation unauthorized"))
-			return
-		}
 		var req struct {
 			Description string    `json:"description"`
 			Scope       int       `json:"scope"`
