@@ -16,6 +16,7 @@ func TestCreate(t *testing.T) {
 		ID:       "uid1",
 		Username: "user1",
 		Password: "pass",
+		Scope:    Scope(7),
 	}
 	err = s.store.SaveUser(u)
 	assert.NoError(t, err)
@@ -23,6 +24,7 @@ func TestCreate(t *testing.T) {
 		ID:       "uid2",
 		Username: "user2",
 		Password: "pass",
+		Scope:    Scope(4),
 	}
 	err = s.store.SaveUser(u)
 	assert.NoError(t, err)
@@ -32,6 +34,7 @@ func TestCreate(t *testing.T) {
 	require.NoError(t, err)
 	if assert.NotNil(t, usr) {
 		assert.Equal(t, "uid1", usr.ID)
+		assert.Equal(t, Scope(7), usr.Scope)
 	}
 	users, err := s.store.AllUsers(0, 10)
 	require.NoError(t, err)

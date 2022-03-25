@@ -283,7 +283,7 @@ func renderJSON(w http.ResponseWriter, status int, res interface{}) {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte(err.Error()))
 	}
-	w.Header().Add("Content-MsgType", "application/json")
+	w.Header().Add("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_, _ = w.Write(data)
 }
