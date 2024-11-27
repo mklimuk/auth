@@ -11,7 +11,7 @@ import (
 	"github.com/go-chi/chi"
 )
 
-//UserLoginHandler is an access layer for user-related operations
+// UserLoginHandler is an access layer for user-related operations
 type UserLoginHandler interface {
 	Login(string, string) (string, error)
 }
@@ -217,6 +217,10 @@ func GenerateUserTokenHandler(writer TokenGenerator) http.HandlerFunc {
 		}
 		token, err := writer.GenerateUserToken(u.ID, req.Description, Scope(req.Scope), req.ExpiresAt)
 		if err != nil {
+			if errors.Is(err, ErrInvalidJwt) {
+				renderJSON(w, http.StatusBadRequest, jsonErr("invalid token request"))
+				return
+			}
 			renderJSON(w, http.StatusInternalServerError, jsonErrf("unexpected error: %v", err))
 			return
 		}

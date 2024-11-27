@@ -5,8 +5,9 @@ import (
 	"os"
 	"strconv"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/mklimuk/auth"
-	yaml "gopkg.in/yaml.v2"
 )
 
 var errBadRequest = fmt.Errorf("bad request")

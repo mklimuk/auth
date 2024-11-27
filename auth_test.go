@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
 func TestManager_CreateUser(t *testing.T) {
@@ -60,6 +61,7 @@ func TestManager_DecodeToken(t *testing.T) {
 }
 
 func TestManager_ValidateToken(t *testing.T) {
+	// TODO: id is not set in claims
 	token := "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE0ODUzNDUzOTEsInVzZXJuYW1lIjoibWljaGFsIiwibmFtZSI6Ik1pY2hhbCBLbGltdWsiLCJwZXJtaXNzaW9ucyI6N30.a-Uh1Z_5m7Jy3GBJbjAZfYqC9uYaIFhM4HKnNb5fwZ4"
 	c := newClaims()
 	defer returnClaims(c)
@@ -67,7 +69,15 @@ func TestManager_ValidateToken(t *testing.T) {
 	defer returnUser(u)
 	s := &storeMock{
 		users: map[string]*User{
-			"mklimuk": {
+			"": { // TODO: id is not set in claims
+				ID:       "u1",
+				Username: "mklimuk",
+				Name:     "Michal Klimuk",
+				Password: "$2a$10$H9Bs2caL.R1mJNeNtJs07uGUtrWXwoHwWbQtwZ0yBEvZ9jJ1o4d26",
+				Scope:    7,
+			},
+			"u1": {
+				ID:       "u1",
 				Username: "mklimuk",
 				Name:     "Michal Klimuk",
 				Password: "$2a$10$H9Bs2caL.R1mJNeNtJs07uGUtrWXwoHwWbQtwZ0yBEvZ9jJ1o4d26",
@@ -76,17 +86,18 @@ func TestManager_ValidateToken(t *testing.T) {
 		},
 	}
 	m := New(s, s, Opts{PasswordSecret: []byte("m!ch4l_"), TokenTTL: 30 * time.Second})
-	s.On("GetUserToken", token).Return(ErrNotFound).Once()
+	s.On("GetUserTokenByValue", token).Return(ErrNotFound).Once()
 	_, err := m.ValidateToken(token, u, c, true)
 	assert.Error(t, err)
 	token, err = buildJwt("u1", "mklimuk", "Michal", []byte("m!ch4l_"), 30*time.Second, 7)
-	s.On("GetUserToken", token).Return(ErrNotFound).Once()
-	s.On("GetUserByUsername", "mklimuk", mock.Anything).Return(nil).Once()
+	require.NoError(t, err)
+	s.On("GetUserTokenByValue", token).Return(ErrNotFound).Once()
+	s.On("GetUser", "u1").Return(nil).Once()
 	updated, err := m.ValidateToken(token, u, c, true)
 	assert.NoError(t, err)
 	assert.NotEmpty(t, updated)
-	s.On("GetUserToken", updated).Return(ErrNotFound).Once()
-	s.On("GetUserByUsername", "mklimuk").Return(nil).Once()
+	s.On("GetUserTokenByValue", updated).Return(ErrNotFound).Once()
+	s.On("GetUser", "u1").Return(nil).Once()
 	updated, err = m.ValidateToken(updated, u, c, true)
 	assert.NoError(t, err)
 	assert.NotEmpty(t, updated)
@@ -101,8 +112,15 @@ type storeMock struct {
 	tokens map[string]*Token
 }
 
-func (m *storeMock) GetUserTokenByValue(s string, token *Token) error {
-	return nil
+func (m *storeMock) GetUserTokenByValue(value string, token *Token) error {
+	args := m.Called(value)
+	if m.tokens != nil {
+		if saved := m.tokens[value]; saved != nil {
+			// copy user from cache
+			*token = *saved
+		}
+	}
+	return args.Error(0)
 }
 
 func (m *storeMock) DeleteUserToken(id string) error {

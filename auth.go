@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dgrijalva/jwt-go"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/oklog/ulid"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -49,9 +49,10 @@ var (
 	ErrTokenExpired  = errors.New("token expired")
 )
 
-//Claims contains specific claims used in the auth system
+// Claims contains specific claims used in the auth system
 type Claims struct {
-	jwt.StandardClaims
+	jwt.RegisteredClaims
+	Id       string `json:"id"`
 	Username string `json:"username"`
 	Name     string `json:"name"`
 	Scope    Scope  `json:"scope"`
@@ -86,7 +87,7 @@ type Auth struct {
 	opts   Opts
 }
 
-//New returns a default authentication service
+// New returns a default authentication service
 func New(users UserStore, tokens UserTokenStore, opts Opts) *Auth {
 	return &Auth{users: users, tokens: tokens, opts: opts}
 }
@@ -106,28 +107,16 @@ func (a *Auth) Login(username, password string) (string, error) {
 }
 
 func (a *Auth) ValidateToken(token string, u *User, cs *Claims, update bool) (string, error) {
-	tok := newToken()
-	defer releaseToken(tok)
-	err := a.tokens.GetUserTokenByValue(token, tok)
-	// if token found, validate
+	found, err := a.tryToken(token, cs)
 	if err != nil {
-		if err != ErrNotFound {
-			return "", fmt.Errorf("could not fetch token: %w", err)
-		}
+		return "", fmt.Errorf("could not check token: %w", err)
+	}
+	if !found {
+		// it is a proper JWT token
 		err = parseJwt(token, a.opts.PasswordSecret, cs)
 		if err != nil {
-			return token, fmt.Errorf("could not parse token: %w", err)
+			return "", fmt.Errorf("could not parse token: %w", err)
 		}
-	} else {
-		if !tok.ExpiresAt.IsZero() && tok.ExpiresAt.Before(time.Now()) {
-			return "", ErrTokenExpired
-		}
-		// we need to populate claims by hand
-		cs.Id = tok.Owner
-		now := time.Now()
-		cs.IssuedAt = now.Unix()
-		cs.Scope = tok.Scope
-		cs.ExpiresAt = now.Add(a.opts.TokenTTL).Unix()
 	}
 	err = a.users.GetUser(cs.Id, u)
 	if err != nil {
@@ -137,6 +126,31 @@ func (a *Auth) ValidateToken(token string, u *User, cs *Claims, update bool) (st
 		return token, nil
 	}
 	return u.toJwt(a.opts.PasswordSecret, u.Scope, a.opts.TokenTTL)
+}
+
+func (a *Auth) tryToken(token string, cs *Claims) (bool, error) {
+	tok := newToken()
+	defer releaseToken(tok)
+	err := a.tokens.GetUserTokenByValue(token, tok)
+	// if token found, validate
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return false, nil
+		}
+		return false, fmt.Errorf("could not fetch token: %w", err)
+
+	}
+
+	if !tok.ExpiresAt.IsZero() && tok.ExpiresAt.Before(time.Now()) {
+		return false, ErrTokenExpired
+	}
+	// we need to populate claims by hand
+	cs.Id = tok.Owner
+	cs.Scope = tok.Scope
+	now := time.Now()
+	cs.IssuedAt = jwt.NewNumericDate(now)
+	cs.ExpiresAt = jwt.NewNumericDate(now.Add(a.opts.TokenTTL))
+	return true, nil
 }
 
 func (a *Auth) Logout(User) error {

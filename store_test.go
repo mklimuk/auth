@@ -1,7 +1,6 @@
 package auth
 
 import (
-	"io/ioutil"
 	"os"
 	"testing"
 
@@ -60,7 +59,7 @@ func TestTokens(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Len(t, tokens, 3)
 	var tok Token
-	assert.NoError(t, s.store.GetUserToken("token1_2", &tok))
+	assert.NoError(t, s.store.GetUserTokenByValue("token1_2", &tok))
 	assert.Equal(t, "test1", tok.Owner)
 	assert.NoError(t, s.store.DeleteUserToken("5"))
 	assert.NoError(t, s.store.DeleteUserToken("3"))
@@ -77,7 +76,7 @@ type StoreWrapper struct {
 func NewStoreWrapper() (*StoreWrapper, error) {
 	w := &StoreWrapper{}
 	var err error
-	if w.f, err = ioutil.TempFile(os.TempDir(), "test_authstore"); err != nil {
+	if w.f, err = os.CreateTemp(os.TempDir(), "test_authstore"); err != nil {
 		return w, err
 	}
 	w.store, err = NewBoltStore(w.f.Name())
