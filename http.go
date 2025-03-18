@@ -139,7 +139,9 @@ func LoginHandler(auth UserLoginHandler) http.HandlerFunc {
 			return
 		}
 		w.Header().Set("Authorization", fmt.Sprintf("Bearer %s", token))
-		w.WriteHeader(http.StatusOK)
+		renderJSON(w, http.StatusOK, struct {
+			Token string `json:"token"`
+		}{Token: token})
 	}
 }
 
