@@ -242,13 +242,13 @@ func (m *serviceMock) CreateUser(user User) error {
 	return args.Error(0)
 }
 
-//Login is a mocked method
+// Login is a mocked method
 func (m *serviceMock) Login(username, pass string) (string, error) {
 	args := m.Called(username, pass)
 	return args.String(0), args.Error(1)
 }
 
-//Create is a mocked method
+// Create is a mocked method
 func (m *serviceMock) Create(u *User) (*User, error) {
 	args := m.Called(u)
 	if args.Get(0) == nil {
@@ -262,7 +262,7 @@ func (m *serviceMock) GetUser(ID string, u *User) error {
 	return args.Error(0)
 }
 
-//GetAll is a mocked method
+// GetAll is a mocked method
 func (m *serviceMock) GetAllUsers() ([]*User, error) {
 	args := m.Called()
 	if args.Get(0) == nil {
@@ -271,7 +271,7 @@ func (m *serviceMock) GetAllUsers() ([]*User, error) {
 	return args.Get(0).([]*User), args.Error(1)
 }
 
-//CheckJWT is a mocked method
+// CheckJWT is a mocked method
 func (m *serviceMock) ValidateToken(token string, user *User, claims *Claims, update bool) (string, error) {
 	args := m.Called(token, update)
 	if m.user != nil {

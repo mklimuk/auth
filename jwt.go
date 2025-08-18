@@ -29,7 +29,7 @@ func parseJwt(tokenString string, secret []byte, c *Claims) error {
 	return nil
 }
 
-//buildJwt builds a JWT token with custom claims
+// buildJwt builds a JWT token with custom claims
 func buildJwt(id, username, fullName string, secret []byte, validity time.Duration, scope Scope) (string, error) {
 	ttl := time.Now().Add(validity)
 	c := newClaims()

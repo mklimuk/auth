@@ -30,7 +30,7 @@ func returnUser(u *User) {
 	userPool.Put(u)
 }
 
-//User contains user properties
+// User contains user properties
 type User struct {
 	ID       string `json:"id" yaml:"id,omitempty" storm:"unique"`
 	Username string `json:"username" yaml:"username" storm:"unique"`

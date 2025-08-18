@@ -29,3 +29,4 @@ vendor
 .version
 
 dist
+**/.DS_Store

@@ -49,7 +49,7 @@ var (
 	ErrTokenExpired  = errors.New("token expired")
 )
 
-//Claims contains specific claims used in the auth system
+// Claims contains specific claims used in the auth system
 type Claims struct {
 	jwt.StandardClaims
 	Username string `json:"username"`
@@ -86,7 +86,7 @@ type Auth struct {
 	opts   Opts
 }
 
-//New returns a default authentication service
+// New returns a default authentication service
 func New(users UserStore, tokens UserTokenStore, opts Opts) *Auth {
 	return &Auth{users: users, tokens: tokens, opts: opts}
 }

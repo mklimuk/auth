@@ -11,7 +11,7 @@ import (
 	"github.com/go-chi/chi"
 )
 
-//UserLoginHandler is an access layer for user-related operations
+// UserLoginHandler is an access layer for user-related operations
 type UserLoginHandler interface {
 	Login(string, string) (string, error)
 }
