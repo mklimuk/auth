@@ -207,7 +207,8 @@ func TestGenerateUserTokenHandler(t *testing.T) {
 			s.On("GenerateUserToken", "test", Scope(7)).Return(Token{Owner: "test", Scope: 7}, nil)
 		}, http.StatusOK},
 		{"invalid scope", `{"scope":8,"expires_at":"2030-12-31T00:00:00Z"}`, 8, func(s *serviceMock) {
-		}, http.StatusUnauthorized},
+			s.On("GenerateUserToken", "test", Scope(8)).Return(Token{}, ErrInvalidJwt)
+		}, http.StatusBadRequest},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

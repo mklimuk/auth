@@ -139,7 +139,9 @@ func LoginHandler(auth UserLoginHandler) http.HandlerFunc {
 			return
 		}
 		w.Header().Set("Authorization", fmt.Sprintf("Bearer %s", token))
-		w.WriteHeader(http.StatusOK)
+		renderJSON(w, http.StatusOK, struct {
+			Token string `json:"token"`
+		}{Token: token})
 	}
 }
 
@@ -217,6 +219,10 @@ func GenerateUserTokenHandler(writer TokenGenerator) http.HandlerFunc {
 		}
 		token, err := writer.GenerateUserToken(u.ID, req.Description, Scope(req.Scope), req.ExpiresAt)
 		if err != nil {
+			if errors.Is(err, ErrInvalidJwt) {
+				renderJSON(w, http.StatusBadRequest, jsonErr("invalid token request"))
+				return
+			}
 			renderJSON(w, http.StatusInternalServerError, jsonErrf("unexpected error: %v", err))
 			return
 		}
