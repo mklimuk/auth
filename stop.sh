@@ -1,5 +1,0 @@
-#!/bin/sh
-
-HUSAR_VERSION="$1" docker-compose -f run.yml stop
-RET=$?
-exit $RET

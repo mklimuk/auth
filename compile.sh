@@ -1,19 +1,9 @@
 #!/bin/sh
 
-VER=latest
-VERSION_FILE=".version"
+# get script's location path
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+pushd $DIR > /dev/null
 
-if [[ ! -z "$1" ]]; then
-  VER="$1"
-else
-  if [[ -e $VERSION_FILE ]]; then
-    VER=`cat $VERSION_FILE`
-  fi
-fi
+go build -o "$(pwd)/dist/generator" -v "./app/generator"
 
-echo "Compiling with tag: $VER"
-echo $VER > .version
-
-HUSAR_VERSION="$VER" docker-compose -f compile.yml run --rm auth_compile
-RET=$?
-exit $RET
+popd $DIR > /dev/null
